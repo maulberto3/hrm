@@ -23,44 +23,45 @@ class HierarchicalReasonerModel(nn.Module):
     def __init__(self, config: ModelConfig):
         super().__init__()
         self.config = config
-        self.cls_token = nn.Parameter(
-            trunc_normal_init_(
-                torch.empty(config.hidden_size), std=1.0 / math.sqrt(config.hidden_size)
-            )
-        )
+        # Token embedding
         self.input_embedding = Embedding(
             config.vocab_size,
             config.hidden_size,
             init_std=1.0 / math.sqrt(config.hidden_size),
         )
-        self.output_head = Linear(config.hidden_size, config.vocab_size, bias=False)
-        self.q_act_head = Linear(config.hidden_size, 2, bias=True)
-        with torch.no_grad():
-            self.q_act_head.linear.weight.zero_()
-            self.q_act_head.linear.bias.fill_(-5)
+        # Positional embedding (Rotary)
         self.rotary_emb = RotaryEmbedding(
             config.hidden_size // config.num_heads,
-            config.seq_len + 1,
+            config.seq_len,
             config.rope_theta,
         )
+        # Output heads
+        self.output_head = Linear(config.hidden_size, config.vocab_size, bias=False)
+        self.q_learning_head = Linear(config.hidden_size, 2, bias=True)
+        with torch.no_grad():
+            self.q_learning_head.linear.weight.zero_()
+            self.q_learning_head.linear.bias.fill_(-5)
+        # Reasoner modules
         self.high_level_reasoner = ReasonerModule(config)
         self.low_level_reasoner = ReasonerModule(config)
-        self.register_buffer(
-            "H_init", trunc_normal_init_(torch.empty(config.hidden_size), std=1)
-        )
-        self.register_buffer(
-            "L_init", trunc_normal_init_(torch.empty(config.hidden_size), std=1)
-        )
 
-    def initial_hidden_states(self, batch_size):
+    def initial_hidden_states(self, batch_size, seq_len, device):
         """
-        Returns initial hidden states z_H0, z_L0 for a batch.
+        Returns initial hidden states z_H0, z_L0 for a batch, directly initialized to [batch_size, seq_len, hidden_size].
         Paper: "The initial hidden states z_0 are initialized by sampling from a truncated normal distribution..."
         """
-        device = self.cls_token.device
+        # Directly sample new tensors for each batch and sequence position
+        high_level = trunc_normal_init_(
+            torch.empty(batch_size, seq_len, self.config.hidden_size, device=device),
+            std=1,
+        )
+        low_level = trunc_normal_init_(
+            torch.empty(batch_size, seq_len, self.config.hidden_size, device=device),
+            std=1,
+        )
         return {
-            "high_level": self.H_init.unsqueeze(0).repeat(batch_size, 1).to(device),
-            "low_level": self.L_init.unsqueeze(0).repeat(batch_size, 1).to(device),
+            "high_level": high_level,
+            "low_level": low_level,
         }
 
     def encode_inputs(self, inputs):
@@ -68,54 +69,30 @@ class HierarchicalReasonerModel(nn.Module):
         Encode input tokens and prepend CLS token.
         Paper: "First, the input x is projected into a working representation x̃ by the input network..."
         """
-        batch_size = inputs.size(0)
-        input_emb = torch.cat(
-            [
-                self.cls_token.unsqueeze(0).repeat(batch_size, 1).unsqueeze(1),
-                self.input_embedding(inputs),
-            ],
-            dim=1,
-        ) * math.sqrt(self.config.hidden_size)
+        input_emb = self.input_embedding(inputs) * math.sqrt(self.config.hidden_size)
         return input_emb
 
-    def forward(self, hidden_states, inputs):
+    def forward(self, hidden_states, inputs, segment=0, max_segments=None):
         """
-        Implements the HRM forward pass:
+        Implements the HRM forward pass with ACT support:
         - Input embedding
         - Hierarchical recurrent cycles (low-level and high-level)
         - One-step gradient approximation (final step with grad, rest with torch.no_grad)
         - Output head and Q-head
-        Paper: "At each timestep i, the L-module updates its state conditioned on its own previous state, the H-module's current state (which remains fixed throughout the cycle), and the input representation..."
-        Paper: "The H-module only updates once per cycle (i.e., every T timesteps) using the L-module's final state at the end of that cycle..."
-        Paper: "After N full cycles, a prediction ŷ is extracted from the hidden state of the H-module..."
-        Paper: "A halting mechanism (detailed later in this section) determines whether the model should terminate, in which case ŷ will be used as the final prediction, or continue with an additional forward pass."
-        Paper: "Deep supervision: multiple forward passes (segments), each with detached hidden state."
-        Paper: "One-step gradient approximation: only backpropagate through final states, not full sequence."
+        Paper: ACT implementation with Q-learning for adaptive halting
         """
         input_emb = self.encode_inputs(inputs)
-        high_level_state = hidden_states["high_level"]
         low_level_state = hidden_states["low_level"]
+        high_level_state = hidden_states["high_level"]
 
-        # Fix: expand high_level_state to match input_emb shape
-        _, seq_len_plus1, _ = input_emb.shape
-
-        # Run reasoning cycles
+        # Run reasoning cycles (temporal separation: high-level and low-level)
         for cycle in range(
             self.config.high_level_cycles * self.config.low_level_cycles - 1
         ):
-            # Only expand if high_level_state is 2D, ensure correct seq_len
-            if high_level_state.dim() == 2:
-                hl_expanded = high_level_state.unsqueeze(1).expand(
-                    -1, seq_len_plus1, -1
-                )
-            elif high_level_state.shape[1] != seq_len_plus1:
-                # If 3D but wrong seq_len, fix it
-                hl_expanded = high_level_state[:, :1, :].expand(-1, seq_len_plus1, -1)
-            else:
-                hl_expanded = high_level_state
+            # Each cycle is a "segment" of reasoning
             low_level_state = self.low_level_reasoner(
                 low_level_state,
-                hl_expanded + input_emb,
+                high_level_state + input_emb,
                 rotary_emb=self.rotary_emb,
             )
             if (cycle + 1) % self.config.low_level_cycles == 0:
@@ -123,37 +100,46 @@ class HierarchicalReasonerModel(nn.Module):
                     high_level_state, low_level_state, rotary_emb=self.rotary_emb
                 )
 
-        # Final step
+        # Final step with gradients (one-step gradient approximation)
         low_level_state = low_level_state.detach()
         high_level_state = high_level_state.detach()
-        # Only expand if high_level_state is 2D, ensure correct seq_len
-        if high_level_state.dim() == 2:
-            hl_expanded = high_level_state.unsqueeze(1).expand(-1, seq_len_plus1, -1)
-        elif high_level_state.shape[1] != seq_len_plus1:
-            # If 3D but wrong seq_len, fix it
-            hl_expanded = high_level_state[:, :1, :].expand(-1, seq_len_plus1, -1)
-        else:
-            hl_expanded = high_level_state
+
+        # One-step gradient approximation i.e. final loop
         low_level_state = self.low_level_reasoner(
-            low_level_state,
-            hl_expanded + input_emb,
-            rotary_emb=self.rotary_emb,
+            low_level_state, high_level_state + input_emb, rotary_emb=self.rotary_emb
         )
         high_level_state = self.high_level_reasoner(
             high_level_state, low_level_state, rotary_emb=self.rotary_emb
         )
 
-        output_logits = self.output_head(high_level_state[:, 1:])
-        q_act_logits = self.q_act_head(high_level_state[:, 0])
+        # Each segment produces its own prediction and Q-values
+        # To experiment, toggle the following line:
+        # output_logits = self.output_head(high_level_state[:, 1:])  # recommended: excludes CLS
+        output_logits = self.output_head(high_level_state)  # includes CLS
+
+        q_learning_logits = torch.sigmoid(self.q_learning_head(high_level_state[:, 0]))
+
         return {
             "hidden_states": {
                 "high_level": high_level_state.detach(),
                 "low_level": low_level_state.detach(),
             },
             "output": output_logits,
-            "q_act_halt": q_act_logits[:, 0],
-            "q_act_continue": q_act_logits[:, 1],
+            "q_halt": q_learning_logits[:, 0],
+            "q_continue": q_learning_logits[:, 1],
+            "segment": segment,
         }
+
+    def should_halt(self, q_halt, q_continue, segment, min_segments, max_segments):
+        """
+        ACT halting decision based on Q-values and segment constraints.
+        """
+        # The ACT mechanism adaptively decides how many segments to run
+        if segment >= max_segments:
+            return True
+        if (segment >= min_segments) and (q_halt > q_continue):
+            return True
+        return False
 
 
 # --- Paper Reference ---
@@ -174,3 +160,14 @@ Key equations and mechanisms:
 - Deep supervision: detach hidden state between segments
 - One-step gradient: only backprop through final states
 """
+
+# In machine learning terms, **segment** refers to a single "reasoning pass" or "iteration" of the model's hierarchical reasoning cycle.
+# - In the HRM with ACT, the model can perform multiple segments per input, each segment representing a deeper or more deliberate reasoning step.
+# - Each segment produces its own prediction and Q-values (halt/continue).
+# - The ACT mechanism adaptively decides how many segments to run for each input, allowing the model to "think longer" for harder tasks and "halt early" for easier ones.
+# - This is analogous to adaptive computation time, where the model dynamically chooses its "runtime" per input, similar to how humans may think quickly or slowly depending on task complexity.
+
+# Yes, in HRM with ACT, the number of reasoning segments (loops) per input is **variable** and adaptively determined at runtime.
+# - For each input, the model may perform a different number of reasoning cycles (segments), depending on the Q-head's halt/continue predictions and the ACT logic.
+# - This means the computation time (number of passes through the reasoning loop) is **not fixed**—it can be longer for harder inputs and shorter for easier ones.
+# - The adaptive halting mechanism allows the model to "think longer" when needed, just like humans do for complex tasks.
