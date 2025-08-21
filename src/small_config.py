@@ -1,6 +1,6 @@
 small_model_config = {
     "seq_len": 64,
-    "vocab_size": 10000,
+    "vocab_size": 1000,
     "high_level_cycles": 2,
     "low_level_cycles": 2,
     "num_layers": 2,
@@ -28,7 +28,7 @@ small_training_config = {
     "beta2": 0.99,
     "eval_interval": 10,
     "checkpoint_every_eval": False,
-    "max_segments": 2,
-    "halt_max_steps": 4,
+    "max_deliberation": 4,
+    "halt_max_steps": 8,
     "halt_exploration_prob": 0.05,
 }

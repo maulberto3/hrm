@@ -1,12 +1,7 @@
 import os
 import requests
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
 import tokenizers
-import tqdm
-from random import random
 import logging
 
 # --- Logger setup ---
@@ -49,7 +44,7 @@ for filename, url in DATASOURCE.items():
             f.write(response.content)
         logger.info(f"Saved {filename} to {file_path}")
     else:
-        logger.info(f"Using cached file for {filename}: {file_path}")
+        logger.info(f"Using cached file for {filename[:5]}")
 
 
 # Read and preprocess the text from a Gutenberg file
@@ -74,35 +69,54 @@ def preprocess_gutenberg(filename):
 # Get all texts from the dataset, one per book
 def get_dataset_text():
     logger.info("Loading and preprocessing all dataset texts")
+    concat_path = os.path.join(DATA_DIR, "concatenated_gutenberg.txt")
+    if os.path.exists(concat_path):
+        logger.info(f"Loading cached concatenated text from {concat_path}")
+        with open(concat_path, "r", encoding="utf-8") as f:
+            return [f.read()]
     all_text = []
     for filename in DATASOURCE:
         file_path = os.path.join(DATA_DIR, f"{filename}.txt")
         text = preprocess_gutenberg(file_path)
         all_text.append(text)
+    # Cache concatenated text for future runs
+    with open(concat_path, "w", encoding="utf-8") as f:
+        f.write(" ".join(all_text))
     return all_text
 
 
 # Tokenization with Byte-Pair Encoding (BPE)
 SPECIAL_TOKENS = ["[CLS]", "[pad]", "[eos]"]
 
+# Dynamically set VOCAB_SIZE from config
+try:
+    from small_config import small_model_config as model_cfg_dict
+except ImportError:
+    try:
+        from big_config import big_model_config as model_cfg_dict
+    except ImportError:
+        model_cfg_dict = {"vocab_size": 10000}
+
+VOCAB_SIZE = model_cfg_dict.get("vocab_size", 10000)
+tokenizer_path = f"gutenberg_tokenizer_vocab_size_{VOCAB_SIZE}.json"
+
 # Load tokenizer from file if available, otherwise train a new one
-if os.path.exists("gutenberg_tokenizer.json"):
-    logger.info("Using previously trained tokenizer from gutenberg_tokenizer.json")
-    tokenizer = tokenizers.Tokenizer.from_file("gutenberg_tokenizer.json")
+if os.path.exists(tokenizer_path):
+    logger.info(f"Using previously trained tokenizer from {tokenizer_path}")
+    tokenizer = tokenizers.Tokenizer.from_file(tokenizer_path)
 else:
     logger.info("No trained tokenizer found. Training new BPE tokenizer from scratch.")
     tokenizer = tokenizers.Tokenizer(tokenizers.models.BPE())
     tokenizer.pre_tokenizer = tokenizers.pre_tokenizers.ByteLevel(add_prefix_space=True)
     tokenizer.decoder = tokenizers.decoders.ByteLevel()
-    VOCAB_SIZE = 10000
     trainer = tokenizers.trainers.BpeTrainer(
         vocab_size=VOCAB_SIZE, special_tokens=SPECIAL_TOKENS, show_progress=True
     )
     text = get_dataset_text()
     tokenizer.train_from_iterator(text, trainer=trainer)
     tokenizer.enable_padding(pad_id=tokenizer.token_to_id("[pad]"), pad_token="[pad]")
-    tokenizer.save("gutenberg_tokenizer.json", pretty=True)
-    logger.info("Saved trained tokenizer to gutenberg_tokenizer.json")
+    tokenizer.save(tokenizer_path, pretty=True)  # Save with correct name
+    logger.info(f"Saved trained tokenizer to {tokenizer_path}")
 
 # Get the token ID for the [CLS] token
 CLS_TOKEN_ID = tokenizer.token_to_id("[CLS]")
@@ -112,6 +126,16 @@ CLS_TOKEN_ID = tokenizer.token_to_id("[CLS]")
 class GutenbergDataset(torch.utils.data.Dataset):
     def __init__(self, text, tokenizer, seq_len=512, cls_token_id=None):
         logger.info("Initializing GutenbergDataset")
+        # Cache concatenated text for future runs
+        concat_path = os.path.join(DATA_DIR, "concatenated_gutenberg.txt")
+        if os.path.exists(concat_path):
+            logger.info(f"Loading cached concatenated text from {concat_path}")
+            with open(concat_path, "r", encoding="utf-8") as f:
+                text = f.read()
+        else:
+            logger.info(f"Caching concatenated text to {concat_path}")
+            with open(concat_path, "w", encoding="utf-8") as f:
+                f.write(text)
         self.seq_len = seq_len
         # Use provided CLS token ID or get it from tokenizer
         self.cls_token_id = (
@@ -127,4 +151,5 @@ class GutenbergDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         # Prepend CLS token to each sequence for model input
         seq = [self.cls_token_id] + self.encoded[idx : idx + self.seq_len - 1]
+        return torch.tensor(seq)
         return torch.tensor(seq)

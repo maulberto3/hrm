@@ -35,12 +35,13 @@ else:
 
 
 # --- Config ---
-SEQ_LEN = model_cfg_dict["seq_len"]  # Sequence length for model input
-BATCH_SIZE = model_cfg_dict.get("batch_size", 2)  # Batch size for training
-EPOCHS = model_cfg_dict.get("n_epochs", 1)  # Number of training epochs
+SEQ_LEN = model_cfg_dict["seq_len"]
+BATCH_SIZE = model_cfg_dict.get("batch_size", 2)
+EPOCHS = model_cfg_dict.get("n_epochs", 1)
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+USE_ACT = True
 logger.info(
-    f"SEQ_LEN={SEQ_LEN}, BATCH_SIZE={BATCH_SIZE}, EPOCHS={EPOCHS}, DEVICE={DEVICE}"
+    f"SEQ_LEN={SEQ_LEN}, BATCH_SIZE={BATCH_SIZE}, EPOCHS={EPOCHS}, DEVICE={DEVICE}, USE_ACT={USE_ACT}"
 )
 
 
@@ -66,18 +67,17 @@ logger.info("Model and optimizer initialized.")
 
 # --- Training loop ---
 logger.info("STARTING TRAINING LOOP...")
-use_act = "max_segments" in model_cfg_dict and model_cfg_dict["max_segments"] > 1
-max_segments = model_cfg_dict.get("max_segments", 1)
-# Modular training call (can use train_model, train_one_epoch, etc. as needed)
-train_model(
+max_deliberation = model_cfg_dict.get("max_deliberation", 1)
+
+avg_loss, trained_model = train_model(
     model,
     dataloader,
     optimizer,
     tokenizer,
     DEVICE,
     epochs=EPOCHS,
-    use_act=use_act,
-    max_segments=max_segments,
+    use_act=USE_ACT,
+    max_deliberation=max_deliberation,
     logger=logger,
     quick_run=QUICK_RUN,
 )
