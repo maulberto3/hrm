@@ -103,10 +103,10 @@ class RotaryEmbedding(nn.Module):
         self.register_buffer("sin", emb.sin())
 
     def forward(self, x):
-        # x shape: [batch, seq_len, num_heads, head_dim]
+        # x shape: [batch_size, seq_len, head_dim]
         seq_len = x.size(1)
-        cos = self.cos[:seq_len].unsqueeze(0).unsqueeze(2)  # [1, seq_len, 1, head_dim]
-        sin = self.sin[:seq_len].unsqueeze(0).unsqueeze(2)  # [1, seq_len, 1, head_dim]
+        cos = self.cos[:seq_len]  # [seq_len, head_dim]
+        sin = self.sin[:seq_len]  # [seq_len, head_dim]
         return (x * cos) + (self.rotate_half(x) * sin)
 
     @staticmethod
@@ -120,46 +120,66 @@ class Attention(nn.Module):
     """
     Multi-head attention with rotary positional encoding.
     Used in both low-level and high-level modules.
-    Implements QKV projections, grouped query attention, and output projection.
+    Implements QKV projections and output projection - simplified Llama-style.
     Paper: "Both low-level and high-level recurrent modules f_L and f_H are implemented using encoder-only Transformer blocks..."
     """
 
-    def __init__(self, dim, head_dim, num_heads, key_value_heads_per_head=1):
+    def __init__(self, dim, head_dim, num_heads):
         super().__init__()
         self.dim = dim
         self.head_dim = head_dim
         self.num_heads = num_heads
-        self.key_value_heads_per_head = key_value_heads_per_head
-        self.num_key_value_heads = num_heads * key_value_heads_per_head
-        self.qkv_proj = Linear(
-            dim, (num_heads + 2 * self.num_key_value_heads) * head_dim, bias=False
-        )
-        self.out_proj = Linear(head_dim * num_heads, dim, bias=False)
+        assert (
+            dim == head_dim * num_heads
+        ), f"dim ({dim}) must equal head_dim ({head_dim}) * num_heads ({num_heads})"
+
+        # Simple QKV projection - each gets same dimensions
+        self.q_proj = Linear(dim, dim, bias=False)
+        self.k_proj = Linear(dim, dim, bias=False)
+        self.v_proj = Linear(dim, dim, bias=False)
+        self.out_proj = Linear(dim, dim, bias=False)
 
     def forward(self, x, rotary_emb=None):
         batch_size, seq_len, _ = x.shape
-        qkv = self.qkv_proj(x).view(
-            batch_size,
-            seq_len,
-            self.num_heads + 2 * self.num_key_value_heads,
-            self.head_dim,
-        )
-        query = qkv[:, :, : self.num_heads]
-        key = qkv[:, :, self.num_heads : self.num_heads + self.num_key_value_heads]
-        value = qkv[:, :, self.num_heads + self.num_key_value_heads :]
+
+        # Project to Q, K, V and reshape to [batch_size, seq_len, num_heads, head_dim]
+        query = self.q_proj(x).view(batch_size, seq_len, self.num_heads, self.head_dim)
+        key = self.k_proj(x).view(batch_size, seq_len, self.num_heads, self.head_dim)
+        value = self.v_proj(x).view(batch_size, seq_len, self.num_heads, self.head_dim)
+
+        # Apply rotary embeddings if provided - reshape to work with [batch_size, seq_len, head_dim]
         if rotary_emb is not None:
-            query = rotary_emb(query)
-            key = rotary_emb(key)
-        # TODO: Implement grouped query attention logic as in Swift
+            # Reshape to [batch_size * num_heads, seq_len, head_dim] for rotary embedding
+            query_flat = query.view(batch_size * self.num_heads, seq_len, self.head_dim)
+            key_flat = key.view(batch_size * self.num_heads, seq_len, self.head_dim)
+
+            # Apply rotary embedding
+            query_flat = rotary_emb(query_flat)
+            key_flat = rotary_emb(key_flat)
+
+            # Reshape back to [batch_size, seq_len, num_heads, head_dim]
+            query = query_flat.view(batch_size, seq_len, self.num_heads, self.head_dim)
+            key = key_flat.view(batch_size, seq_len, self.num_heads, self.head_dim)
+
+        # Transpose to [batch_size, num_heads, seq_len, head_dim] for attention computation
         query = query.transpose(1, 2)
         key = key.transpose(1, 2)
         value = value.transpose(1, 2)
+
+        # Compute attention scores
         attn_logits = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(
             self.head_dim
         )
         attn_weights = torch.softmax(attn_logits, dim=-1)
+
+        # Apply attention to values
         combined = torch.matmul(attn_weights, value)
-        combined = combined.transpose(1, 2).reshape(batch_size, seq_len, self.dim)
+
+        # Reshape back to [batch_size, seq_len, dim]
+        combined = (
+            combined.transpose(1, 2).contiguous().view(batch_size, seq_len, self.dim)
+        )
+
         return self.out_proj(combined)
 
 

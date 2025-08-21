@@ -23,6 +23,7 @@ class ModelConfig:
         rope_theta=10000.0,
         halt_max_steps=16,
         halt_exploration_prob=0.1,
+        **kwargs  # Accept and ignore extra keys
     ):
         self.seq_len = seq_len
         self.vocab_size = vocab_size
@@ -77,25 +78,12 @@ class ReasonerModule(nn.Module):
         )
 
     def forward(self, hidden_state, input_injection, rotary_emb=None):
-        # Ensure hidden_state matches input_injection shape for addition
-        if hidden_state.dim() == 2:
-            hidden_state = hidden_state.unsqueeze(1).expand(
-                -1, input_injection.size(1), -1
-            )
-        elif hidden_state.dim() == 4:
-            # If 4D, reshape to 3D by collapsing extra dimensions first
-            hidden_state = hidden_state.squeeze(1)
-            # Then check if we need to expand
-            if hidden_state.shape[1] != input_injection.shape[1]:
-                hidden_state = hidden_state[:, :1, :].expand(
-                    -1, input_injection.size(1), -1
-                )
-        elif hidden_state.shape[1] != input_injection.shape[1]:
-            # For 3D tensors with wrong seq_len
-            hidden_state = hidden_state[:, :1, :].expand(
-                -1, input_injection.size(1), -1
-            )
+        # Element-wise addition: core HRM mechanism for combining inputs
+        # Paper: "straightforward element-wise addition to combine them"
         x = hidden_state + input_injection
+
+        # Process through reasoning blocks
         for block in self.blocks:
             x = block(x, rotary_emb)
+
         return x

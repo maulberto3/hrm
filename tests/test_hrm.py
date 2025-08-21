@@ -38,7 +38,7 @@ def test_hierarchical_reasoner_model_basic():
 
     model = HierarchicalReasonerModel(config).to(device)
     inputs = torch.randint(0, config.vocab_size, (batch_size, seq_len), device=device)
-    hidden_states = model.initial_hidden_states(batch_size)
+    hidden_states = model.initial_hidden_states(batch_size, seq_len, device)
     outputs = model(hidden_states, inputs)
 
     # Output should contain logits for each token (excluding CLS token)
@@ -47,7 +47,7 @@ def test_hierarchical_reasoner_model_basic():
     # output shape: [batch_size, seq_len, vocab_size] (since CLS token is removed)
     assert outputs["output"].shape == (
         batch_size,
-        seq_len,
+        seq_len - 1,  # because we don't predict for the cls token inside hrm
         config.vocab_size,
     ), f"Unexpected output shape: {outputs['output'].shape}"
     # hidden_states shapes: [batch_size, seq_len+1, hidden_size] (including CLS token)
@@ -59,12 +59,12 @@ def test_hierarchical_reasoner_model_basic():
     ), "Hidden states should contain 'low_level'"
     assert outputs["hidden_states"]["high_level"].shape == (
         batch_size,
-        seq_len + 1,
+        seq_len,
         config.hidden_size,
     ), f"Unexpected high_level shape: {outputs['hidden_states']['high_level'].shape}"
     assert outputs["hidden_states"]["low_level"].shape == (
         batch_size,
-        seq_len + 1,
+        seq_len,
         config.hidden_size,
     ), f"Unexpected low_level shape: {outputs['hidden_states']['low_level'].shape}"
 

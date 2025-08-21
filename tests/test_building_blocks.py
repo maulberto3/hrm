@@ -79,12 +79,11 @@ def test_rotary_embedding_basic():
     max_length = 128
     batch_size = 4
     seq_len = 16
-    num_heads = 8
 
     rotary_emb = RotaryEmbedding(dim, max_length).to(device)
-    # Input: [batch_size, seq_len, num_heads, head_dim]
-    input_tensor = torch.randn(batch_size, seq_len, num_heads, dim, device=device)
-    # Output: [batch_size, seq_len, num_heads, head_dim]
+    # Input: [batch_size, seq_len, head_dim] - simplified interface
+    input_tensor = torch.randn(batch_size, seq_len, dim, device=device)
+    # Output: [batch_size, seq_len, head_dim]
     output = rotary_emb(input_tensor)
 
     assert output.shape == input_tensor.shape, f"Unexpected shape: {output.shape}"
