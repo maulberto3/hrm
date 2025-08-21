@@ -87,15 +87,18 @@ class RotaryEmbedding(nn.Module):
     """
     Rotary Positional Encoding (RoPE).
     Provides relative position info for attention, replacing learned position embeddings.
-    Paper: "These improvements include Rotary Positional Encoding..."
+    Note: The output cos/sin tensors have shape [seq_len, head_dim] and are shared across all batch samples and heads.
     """
 
-    def __init__(self, dim, max_length=2048, base=10000.0):
+    def __init__(self, head_dim, max_length=2048, base=10000.0):
         super().__init__()
-        self.dim = dim
+        assert (
+            head_dim % 2 == 0
+        ), f"head_dim ({head_dim}) must be divisible by 2 for RoPE."
+        self.head_dim = head_dim
         self.max_length = max_length
         self.base = base
-        inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2).float() / dim))
+        inv_freq = 1.0 / (base ** (torch.arange(0, head_dim, 2).float() / head_dim))
         t = torch.arange(max_length).float()
         freqs = torch.outer(t, inv_freq)
         emb = torch.cat((freqs, freqs), dim=-1)
@@ -103,16 +106,48 @@ class RotaryEmbedding(nn.Module):
         self.register_buffer("sin", emb.sin())
 
     def forward(self, x):
-        # x shape: [batch_size, seq_len, head_dim]
-        seq_len = x.size(1)
+        # x shape: [batch_size * num_heads, seq_len, head_dim]
+        _, seq_len, head_dim = x.size()
+        assert (
+            head_dim == self.head_dim
+        ), f"Input head_dim ({head_dim}) does not match RotaryEmbedding head_dim ({self.head_dim})"
         cos = self.cos[:seq_len]  # [seq_len, head_dim]
         sin = self.sin[:seq_len]  # [seq_len, head_dim]
-        return (x * cos) + (self.rotate_half(x) * sin)
+        return cos, sin
 
     @staticmethod
     def rotate_half(x):
         x1, x2 = x.chunk(2, dim=-1)
         return torch.cat((-x2, x1), dim=-1)
+
+
+def apply_rotary_pos_emb(
+    q: torch.Tensor, k: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor
+):
+    def rotate_half(x: torch.Tensor):
+        """Rotates half the hidden dims of the input."""
+        x1 = x[..., : x.shape[-1] // 2]
+        x2 = x[..., x.shape[-1] // 2 :]
+        return torch.cat((-x2, x1), dim=-1)
+
+    # q, k: [bs, seq_len, num_heads, head_dim]
+    # cos, sin: [seq_len, head_dim]
+    orig_dtype = q.dtype
+    q = q.to(cos.dtype)
+    k = k.to(cos.dtype)
+
+    cos_unsqueeze = cos.unsqueeze(-2)
+    sin_unsqueeze = sin.unsqueeze(-2)
+
+    q_cos = q * cos_unsqueeze
+    q_sin = rotate_half(q) * sin_unsqueeze
+    q_embed = q_cos + q_sin
+
+    k_cos = k * cos_unsqueeze
+    k_sin = rotate_half(k) * sin_unsqueeze
+    k_embed = k_cos + k_sin
+
+    return q_embed.to(orig_dtype), k_embed.to(orig_dtype)
 
 
 # --- Attention Layer ---
@@ -124,11 +159,12 @@ class Attention(nn.Module):
     Paper: "Both low-level and high-level recurrent modules f_L and f_H are implemented using encoder-only Transformer blocks..."
     """
 
-    def __init__(self, dim, head_dim, num_heads):
+    def __init__(self, dim, head_dim, num_heads, causal=False):
         super().__init__()
         self.dim = dim
         self.head_dim = head_dim
         self.num_heads = num_heads
+        self.causal = causal
         assert (
             dim == head_dim * num_heads
         ), f"dim ({dim}) must equal head_dim ({head_dim}) * num_heads ({num_heads})"
@@ -139,27 +175,26 @@ class Attention(nn.Module):
         self.v_proj = Linear(dim, dim, bias=False)
         self.out_proj = Linear(dim, dim, bias=False)
 
-    def forward(self, x, rotary_emb=None):
+    def forward(self, x, cos_sin):
         batch_size, seq_len, _ = x.shape
 
-        # Project to Q, K, V and reshape to [batch_size, seq_len, num_heads, head_dim]
+        # Project to Q, K, V
         query = self.q_proj(x).view(batch_size, seq_len, self.num_heads, self.head_dim)
         key = self.k_proj(x).view(batch_size, seq_len, self.num_heads, self.head_dim)
         value = self.v_proj(x).view(batch_size, seq_len, self.num_heads, self.head_dim)
 
-        # Apply rotary embeddings if provided - reshape to work with [batch_size, seq_len, head_dim]
-        if rotary_emb is not None:
-            # Reshape to [batch_size * num_heads, seq_len, head_dim] for rotary embedding
-            query_flat = query.view(batch_size * self.num_heads, seq_len, self.head_dim)
-            key_flat = key.view(batch_size * self.num_heads, seq_len, self.head_dim)
+        # Reshape for rotary embedding
+        query_flat = query.view(batch_size * self.num_heads, seq_len, self.head_dim)
+        key_flat = key.view(batch_size * self.num_heads, seq_len, self.head_dim)
 
-            # Apply rotary embedding
-            query_flat = rotary_emb(query_flat)
-            key_flat = rotary_emb(key_flat)
+        # Apply rotary embedding
+        query_flat, key_flat = apply_rotary_pos_emb(
+            query_flat, key_flat, cos_sin[0], cos_sin[1]
+        )
 
-            # Reshape back to [batch_size, seq_len, num_heads, head_dim]
-            query = query_flat.view(batch_size, seq_len, self.num_heads, self.head_dim)
-            key = key_flat.view(batch_size, seq_len, self.num_heads, self.head_dim)
+        # Reshape back to [batch_size, seq_len, num_heads, head_dim]
+        query = query_flat.view(batch_size, seq_len, self.num_heads, self.head_dim)
+        key = key_flat.view(batch_size, seq_len, self.num_heads, self.head_dim)
 
         # Transpose to [batch_size, num_heads, seq_len, head_dim] for attention computation
         query = query.transpose(1, 2)
@@ -170,6 +205,16 @@ class Attention(nn.Module):
         attn_logits = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(
             self.head_dim
         )
+
+        # Causal masking
+        if self.causal:
+            mask = torch.tril(
+                torch.ones(
+                    seq_len, seq_len, device=attn_logits.device, dtype=torch.bool
+                )
+            )
+            attn_logits = attn_logits.masked_fill(~mask, float("-inf"))
+
         attn_weights = torch.softmax(attn_logits, dim=-1)
 
         # Apply attention to values

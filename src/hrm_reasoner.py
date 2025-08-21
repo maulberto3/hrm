@@ -23,7 +23,7 @@ class ModelConfig:
         rope_theta=10000.0,
         halt_max_steps=16,
         halt_exploration_prob=0.1,
-        **kwargs  # Accept and ignore extra keys
+        **kwargs,  # Accept and ignore extra keys
     ):
         self.seq_len = seq_len
         self.vocab_size = vocab_size
@@ -57,8 +57,8 @@ class ReasoningBlock(nn.Module):
         self.mlp = SwiGLU(config.hidden_size, config.expansion)
         self.norm_epsilon = config.norm_epsilon
 
-    def forward(self, x, rotary_emb=None):
-        x = rms_norm(x + self.attention(x, rotary_emb), epsilon=self.norm_epsilon)
+    def forward(self, x, cos_sin):
+        x = rms_norm(x + self.attention(x, cos_sin), epsilon=self.norm_epsilon)
         x = rms_norm(x + self.mlp(x), epsilon=self.norm_epsilon)
         return x
 
@@ -77,13 +77,12 @@ class ReasonerModule(nn.Module):
             [ReasoningBlock(config) for _ in range(config.num_layers)]
         )
 
-    def forward(self, hidden_state, input_injection, rotary_emb=None):
+    def forward(self, hidden_state, input_injection, cos_sin):
         # Element-wise addition: core HRM mechanism for combining inputs
         # Paper: "straightforward element-wise addition to combine them"
         x = hidden_state + input_injection
 
         # Process through reasoning blocks
-        for block in self.blocks:
-            x = block(x, rotary_emb)
-
+        for i, block in enumerate(self.blocks):
+            x = block(x, cos_sin)
         return x

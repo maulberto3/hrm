@@ -75,33 +75,35 @@ def test_rotary_embedding_basic():
     - Applied to query and key tensors within the Attention layer.
     - Encodes positional information into the attention mechanism.
     """
-    dim = 64  # head_dim in attention
+    head_dim = 64  # head_dim in attention
     max_length = 128
     batch_size = 4
     seq_len = 16
 
-    rotary_emb = RotaryEmbedding(dim, max_length).to(device)
+    rotary_emb = RotaryEmbedding(head_dim, max_length).to(device)
     # Input: [batch_size, seq_len, head_dim] - simplified interface
-    input_tensor = torch.randn(batch_size, seq_len, dim, device=device)
-    # Output: [batch_size, seq_len, head_dim]
+    input_tensor = torch.randn(batch_size, seq_len, head_dim, device=device)
+    # Output: (cos, sin) - tuple of tensors
     output = rotary_emb(input_tensor)
 
-    assert output.shape == input_tensor.shape, f"Unexpected shape: {output.shape}"
-    # Verify that rotary embedding actually changes the tensor
-    assert not torch.allclose(
-        input_tensor, output
-    ), "RotaryEmbedding should modify input"
-    print("RotaryEmbedding test passed. Output shape:", output.shape)
+    assert isinstance(output, tuple), "RotaryEmbedding should return a tuple"
+    assert len(output) == 2, "RotaryEmbedding should return a tuple of length 2"
+    assert output[0].shape == (
+        seq_len,
+        head_dim,
+    ), f"Unexpected shape for cos: {output[0].shape}"
+    assert output[1].shape == (
+        seq_len,
+        head_dim,
+    ), f"Unexpected shape for sin: {output[1].shape}"
+    print(
+        "RotaryEmbedding test passed. Output shapes:", output[0].shape, output[1].shape
+    )
 
 
 def test_attention_basic():
     """
     Test Attention layer - enables information flow between tokens.
-    Data flow: input -> QKV projection -> attention -> output projection
-    HRM Context:
-    - Core of the ReasoningBlock, allowing tokens to attend to each other.
-    - Uses RotaryEmbedding for position encoding.
-    - Used in both high-level and low-level reasoners.
     """
     dim = 64
     head_dim = 16
@@ -109,24 +111,49 @@ def test_attention_basic():
     batch_size = 2
     seq_len = 8
 
-    attention = Attention(dim, head_dim, num_heads).to(device)
     rotary_emb = RotaryEmbedding(head_dim, max_length=128).to(device)
-
-    # Input: [batch_size, seq_len, dim]
     input_tensor = torch.randn(batch_size, seq_len, dim, device=device)
-    # Output: [batch_size, seq_len, dim]
-    output = attention(input_tensor, rotary_emb=rotary_emb)
 
-    assert output.shape == (
+    # Reshape input for rotary embedding
+    input_tensor_flat = input_tensor.view(batch_size * num_heads, seq_len, head_dim)
+
+    # Get cos and sin embeddings
+    cos_sin = rotary_emb(input_tensor_flat)
+
+    # Non-causal attention
+    attention_noncausal = Attention(dim, head_dim, num_heads, causal=False).to(device)
+    output_noncausal = attention_noncausal(input_tensor, cos_sin)
+    assert output_noncausal.shape == (
         batch_size,
         seq_len,
         dim,
-    ), f"Unexpected shape: {output.shape}"
-    # Verify attention actually processes the input
+    ), f"Unexpected shape: {output_noncausal.shape}"
     assert not torch.allclose(
-        input_tensor, output, atol=1e-3
+        input_tensor, output_noncausal, atol=1e-3
     ), "Attention should transform input"
-    print("Attention test passed. Output shape:", output.shape)
+
+    # Causal attention
+    attention_causal = Attention(dim, head_dim, num_heads, causal=True).to(device)
+    output_causal = attention_causal(input_tensor, cos_sin)
+    assert output_causal.shape == (
+        batch_size,
+        seq_len,
+        dim,
+    ), f"Unexpected shape: {output_causal.shape}"
+    assert not torch.allclose(
+        input_tensor, output_causal, atol=1e-3
+    ), "Attention should transform input"
+
+    # Causal and non-causal outputs should differ
+    assert not torch.allclose(
+        output_noncausal, output_causal, atol=1e-3
+    ), "Causal and non-causal attention outputs should differ"
+
+    print(
+        "Attention test passed. Output shapes:",
+        output_noncausal.shape,
+        output_causal.shape,
+    )
 
 
 def test_swiglu_basic():

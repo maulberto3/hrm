@@ -6,18 +6,18 @@ sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
 )
 
-from hrm import HierarchicalReasonerModel, ModelConfig
+from hrm_inner import HRMInner
+from hrm_reasoner import ModelConfig
 
-# Use CUDA if available
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def test_hierarchical_reasoner_model_basic():
+def test_hrm_inner_basic():
     """
-    Test HierarchicalReasonerModel - the full HRM model.
+    Essential test for HRMInner: checks output shapes and keys.
     """
     config = ModelConfig(
-        seq_len=32,
+        seq_len=8,
         vocab_size=100,
         high_level_cycles=2,
         low_level_cycles=2,
@@ -27,36 +27,25 @@ def test_hierarchical_reasoner_model_basic():
         expansion=4,
         norm_epsilon=0.1,
         rope_theta=10000.0,
-        halt_max_steps=16,
+        halt_max_steps=4,
         halt_exploration_prob=0.1,
     )
     batch_size = 2
-    seq_len = 32
+    seq_len = config.seq_len
 
-    model = HierarchicalReasonerModel(config).to(device)
+    model = HRMInner(config).to(device)
     inputs = torch.randint(0, config.vocab_size, (batch_size, seq_len), device=device)
     hidden_states = model.initial_hidden_states(batch_size, seq_len, device)
 
     outputs = model(hidden_states, inputs)
 
-    # Output should contain logits for each token
     assert "output" in outputs, "Output should contain 'output' key"
-    assert (
-        "hidden_states" in outputs
-    ), "Hidden states should contain 'hidden_states' key"
-    # output shape: [batch_size, seq_len, vocab_size]
+    assert "hidden_states" in outputs, "Output should contain 'hidden_states' key"
     assert outputs["output"].shape == (
         batch_size,
         seq_len,
         config.vocab_size,
     ), f"Unexpected output shape: {outputs['output'].shape}"
-    # hidden_states shapes: [batch_size, seq_len, hidden_size]
-    assert (
-        "high_level" in outputs["hidden_states"]
-    ), "Hidden states should contain 'high_level'"
-    assert (
-        "low_level" in outputs["hidden_states"]
-    ), "Hidden states should contain 'low_level'"
     assert outputs["hidden_states"]["high_level"].shape == (
         batch_size,
         seq_len,
@@ -68,10 +57,8 @@ def test_hierarchical_reasoner_model_basic():
         config.hidden_size,
     ), f"Unexpected low_level shape: {outputs['hidden_states']['low_level'].shape}"
 
-    print(
-        "HierarchicalReasonerModel test passed. Output shape:", outputs["output"].shape
-    )
+    print("HRMInner essential test passed. Output shape:", outputs["output"].shape)
 
 
 if __name__ == "__main__":
-    test_hierarchical_reasoner_model_basic()
+    test_hrm_inner_basic()

@@ -11,8 +11,8 @@ big_model_config = {
     "rope_theta": 10000.0,
     "halt_max_steps": 32,
     "halt_exploration_prob": 0.1,
-    "batch_size": 32,  # Added for run.py
-    "n_epochs": 50,  # Added for run.py
+    "batch_size": 32,
+    "n_epochs": 50,
 }
 
 big_training_config = {
@@ -28,7 +28,7 @@ big_training_config = {
     "beta2": 0.95,
     "eval_interval": 1000,
     "checkpoint_every_eval": True,
-    "max_segments": 8,
+    "max_deliberation": 8,
     "halt_max_steps": 32,
     "halt_exploration_prob": 0.1,
 }
