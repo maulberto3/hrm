@@ -29,13 +29,16 @@ def test_embedding_basic():
     input_ids = torch.randint(0, vocab_size, (batch_size, seq_len), device=device)
     # Output: embeddings [batch_size, seq_len, dim]
     output = embedding(input_ids)
-
+    print(f"\n[Embedding Test]")
+    print(f"Input IDs shape: {input_ids.shape}")
+    print(f"Output shape: {output.shape}")
+    print(f"Output sample: {output[0,0,:4].detach().cpu().numpy()}")
     assert output.shape == (
         batch_size,
         seq_len,
         dim,
     ), f"Unexpected shape: {output.shape}"
-    print("Embedding test passed. Output shape:", output.shape)
+    print("Embedding test passed.")
 
 
 def test_linear_basic():
@@ -58,13 +61,16 @@ def test_linear_basic():
     input_tensor = torch.randn(batch_size, seq_len, in_dim, device=device)
     # Output: [batch_size, seq_len, out_dim]
     output = linear(input_tensor)
-
+    print(f"\n[Linear Test]")
+    print(f"Input shape: {input_tensor.shape}")
+    print(f"Output shape: {output.shape}")
+    print(f"Output sample: {output[0,0,:4].detach().cpu().numpy()}")
     assert output.shape == (
         batch_size,
         seq_len,
         out_dim,
     ), f"Unexpected shape: {output.shape}"
-    print("Linear test passed. Output shape:", output.shape)
+    print("Linear test passed.")
 
 
 def test_rotary_embedding_basic():
@@ -85,7 +91,36 @@ def test_rotary_embedding_basic():
     input_tensor = torch.randn(batch_size, seq_len, head_dim, device=device)
     # Output: (cos, sin) - tuple of tensors
     output = rotary_emb(input_tensor)
+    print(f"\n[RotaryEmbedding Test]")
+    print(f"Input shape: {input_tensor.shape}")
+    print(f"Cos shape: {output[0].shape}, Sin shape: {output[1].shape}")
+    print(f"Cos: {output[0].detach().cpu().numpy()}")
+    print(f"Sin: {output[1].detach().cpu().numpy()}")
 
+    # Illustrate multi-head attention reshaping as in Reasoner test
+    model_dim = 64
+    num_heads = 4
+    head_dim_reasoner = model_dim // num_heads
+    batch_size_reasoner = 2
+    seq_len_reasoner = 8
+    input_tensor_reasoner = torch.randn(
+        batch_size_reasoner, seq_len_reasoner, model_dim, device=device
+    )
+    input_tensor_flat = input_tensor_reasoner.view(
+        batch_size_reasoner * num_heads, seq_len_reasoner, head_dim_reasoner
+    )
+    print(f"\n[Multi-head Attention Example]")
+    print(f"Original input shape (model_dim): {input_tensor_reasoner.shape}")
+    print(
+        f"Reshaped for rotary (batch_size * num_heads, seq_len, head_dim): {input_tensor_flat.shape}"
+    )
+    print(
+        "This reshaping is required because rotary embedding operates per head, not over the full model dimension. Forgetting this is a common source of bugs!"
+    )
+
+    print(
+        "NOTE: RotaryEmbedding operates over the head dimension, not the full model dimension. If you use multi-head attention, you must reshape your input so rotary is applied per head (head_dim), which is usually model_dim // num_heads. This is a common source of shape bugs!"
+    )
     assert isinstance(output, tuple), "RotaryEmbedding should return a tuple"
     assert len(output) == 2, "RotaryEmbedding should return a tuple of length 2"
     assert output[0].shape == (
@@ -96,9 +131,7 @@ def test_rotary_embedding_basic():
         seq_len,
         head_dim,
     ), f"Unexpected shape for sin: {output[1].shape}"
-    print(
-        "RotaryEmbedding test passed. Output shapes:", output[0].shape, output[1].shape
-    )
+    print("RotaryEmbedding test passed.")
 
 
 def test_attention_basic():
@@ -123,6 +156,10 @@ def test_attention_basic():
     # Non-causal attention
     attention_noncausal = Attention(dim, head_dim, num_heads, causal=False).to(device)
     output_noncausal = attention_noncausal(input_tensor, cos_sin)
+    print(f"\n[Attention Test - Noncausal]")
+    print(f"Input shape: {input_tensor.shape}")
+    print(f"Output shape: {output_noncausal.shape}")
+    print(f"Output sample: {output_noncausal[0,0,:4].detach().cpu().numpy()}")
     assert output_noncausal.shape == (
         batch_size,
         seq_len,
@@ -135,6 +172,10 @@ def test_attention_basic():
     # Causal attention
     attention_causal = Attention(dim, head_dim, num_heads, causal=True).to(device)
     output_causal = attention_causal(input_tensor, cos_sin)
+    print(f"\n[Attention Test - Causal]")
+    print(f"Input shape: {input_tensor.shape}")
+    print(f"Output shape: {output_causal.shape}")
+    print(f"Output sample: {output_causal[0,0,:4].detach().cpu().numpy()}")
     assert output_causal.shape == (
         batch_size,
         seq_len,
@@ -149,11 +190,7 @@ def test_attention_basic():
         output_noncausal, output_causal, atol=1e-3
     ), "Causal and non-causal attention outputs should differ"
 
-    print(
-        "Attention test passed. Output shapes:",
-        output_noncausal.shape,
-        output_causal.shape,
-    )
+    print("Attention test passed.")
 
 
 def test_swiglu_basic():
@@ -174,7 +211,10 @@ def test_swiglu_basic():
     input_tensor = torch.randn(batch_size, seq_len, dim, device=device)
     # Output: [batch_size, seq_len, dim]
     output = swiglu(input_tensor)
-
+    print(f"\n[SwiGLU Test]")
+    print(f"Input shape: {input_tensor.shape}")
+    print(f"Output shape: {output.shape}")
+    print(f"Output sample: {output[0,0,:4].detach().cpu().numpy()}")
     assert output.shape == (
         batch_size,
         seq_len,
@@ -184,7 +224,7 @@ def test_swiglu_basic():
     assert not torch.allclose(
         input_tensor, output, atol=1e-3
     ), "SwiGLU should transform input"
-    print("SwiGLU test passed. Output shape:", output.shape)
+    print("SwiGLU test passed.")
 
 
 if __name__ == "__main__":

@@ -20,10 +20,10 @@ def init_hidden_states(model, batch, device):
     )
 
 
-def compute_act_loss(outputs_list, targets, max_deliberation):
+def compute_act_loss(outputs_list, targets, max_halt_steps):
     """
     Compute ACT loss combining sequence-to-sequence loss and Q-learning loss.
-    Uses max_deliberation as the upper bound for ACT steps, matching raw_hrm.py behavior.
+    Uses max_halt_steps as the upper bound for ACT steps, matching raw_hrm.py behavior.
     """
     total_loss = 0
 
@@ -41,8 +41,8 @@ def compute_act_loss(outputs_list, targets, max_deliberation):
         # G_halt = 1{y_hat_m = y} (binary reward for correct prediction)
         g_halt = correct_predictions
 
-        # Use max_deliberation for G_continue computation
-        if m == len(outputs_list) - 1 or m >= max_deliberation - 1:
+        # Use max_halt_steps for G_continue computation
+        if m == len(outputs_list) - 1 or m >= max_halt_steps - 1:
             # Last deliberation or max reached: G_continue = Q_halt of next (same as halt)
             g_continue = g_halt
         else:
@@ -61,15 +61,15 @@ def compute_act_loss(outputs_list, targets, max_deliberation):
     return total_loss / len(outputs_list)
 
 
-def run_act_forward(model, input_x, device, max_deliberation):
-    """Run ACT segments and collect outputs for a batch, using max_deliberation as the upper bound."""
+def run_act_forward(model, input_x, device, max_halt_steps):
+    """Run ACT segments and collect outputs for a batch, using max_halt_steps as the upper bound."""
     # logger.info(
-    #     f"Running ACT forward for input shape {input_x.shape} and max_deliberation={max_deliberation}"
+    #     f"Running ACT forward for input shape {input_x.shape} and max_halt_steps={max_halt_steps}"
     # )
     outputs_list = []
     active_batch_indices = torch.arange(input_x.size(0), device=device)
     current_x = input_x
-    for step in range(max_deliberation):
+    for step in range(max_halt_steps):
         if len(active_batch_indices) == 0:
             break
         # logger.info(f"Segment {deliberation}: current_x shape {current_x.shape}")
@@ -78,7 +78,7 @@ def run_act_forward(model, input_x, device, max_deliberation):
             hidden_states,
             current_x,
             step,
-            max_deliberation=max_deliberation,
+            max_halt_steps=max_halt_steps,
         )
         # logger.info(
         #     f"Segment {deliberation}: outputs['output'] shape {outputs['output'].shape}"
@@ -92,12 +92,12 @@ def run_act_forward(model, input_x, device, max_deliberation):
                     outputs["q_continue"][j],
                     step,
                     1,
-                    max_deliberation,
+                    max_halt_steps,
                 )
                 halt_decisions.append(should_halt)
             halt_mask = torch.tensor(halt_decisions, device=device)
             continue_mask = ~halt_mask
-            if continue_mask.any() and (step < max_deliberation - 1):
+            if continue_mask.any() and (step < max_halt_steps - 1):
                 active_batch_indices = active_batch_indices[continue_mask]
                 current_x = current_x[continue_mask]
             else:
@@ -121,7 +121,7 @@ def train_one_batch(
     tokenizer,
     device,
     use_act=False,
-    max_deliberation=1,
+    max_halt_steps=1,
 ):
     # logger.info(f"Training one batch: batch shape {batch.shape}, use_act={use_act}")
     batch = batch.to(device)
@@ -129,9 +129,9 @@ def train_one_batch(
     input_x = batch[:, :-1]
 
     if use_act:
-        outputs_list = run_act_forward(model, input_x, device, max_deliberation)
+        outputs_list = run_act_forward(model, input_x, device, max_halt_steps)
         targets = batch[:, 2:]
-        loss = compute_act_loss(outputs_list, targets, max_deliberation)
+        loss = compute_act_loss(outputs_list, targets, max_halt_steps)
     else:
         out = run_standard_forward(model, input_x, device)
         logits = out["output"]
@@ -157,12 +157,12 @@ def train_one_epoch(
     tokenizer,
     device,
     use_act=False,
-    max_deliberation=1,
+    max_halt_steps=1,
     logger=None,
     quick_run=False,
 ):
     # logger.info(
-    #     f"Starting training epoch. use_act={use_act}, max_deliberation={max_deliberation}"
+    #     f"Starting training epoch. use_act={use_act}, max_halt_steps={max_halt_steps}"
     # )
     model.train()
     epoch_loss = 0
@@ -174,7 +174,7 @@ def train_one_epoch(
             tokenizer,
             device,
             use_act=use_act,
-            max_deliberation=max_deliberation,
+            max_halt_steps=max_halt_steps,
         )
         epoch_loss += loss
         # if logger:
@@ -196,7 +196,7 @@ def train_model(
     device,
     epochs,
     use_act=False,
-    max_deliberation=1,
+    max_halt_steps=1,
     logger=None,
     quick_run=False,
 ):
@@ -209,7 +209,7 @@ def train_model(
             tokenizer,
             device,
             use_act=use_act,
-            max_deliberation=max_deliberation,
+            max_halt_steps=max_halt_steps,
             logger=logger,
             quick_run=quick_run,
         )

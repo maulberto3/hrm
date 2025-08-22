@@ -2,43 +2,6 @@ from torch import nn
 from hrm_building_blocks import Attention, SwiGLU, rms_norm
 
 
-# --- Model Config ---
-class ModelConfig:
-    """
-    Configuration for HRM, including all architectural hyperparameters.
-    Paper: "Configuration for the hierarchical reasoning model."
-    """
-
-    def __init__(
-        self,
-        seq_len,
-        vocab_size,
-        high_level_cycles,
-        low_level_cycles,
-        num_layers,
-        hidden_size,
-        num_heads,
-        expansion,
-        norm_epsilon=1e-5,
-        rope_theta=10000.0,
-        halt_max_steps=16,
-        halt_exploration_prob=0.1,
-        **kwargs,  # Accept and ignore extra keys
-    ):
-        self.seq_len = seq_len
-        self.vocab_size = vocab_size
-        self.high_level_cycles = high_level_cycles
-        self.low_level_cycles = low_level_cycles
-        self.num_layers = num_layers
-        self.hidden_size = hidden_size
-        self.num_heads = num_heads
-        self.expansion = expansion
-        self.norm_epsilon = norm_epsilon
-        self.rope_theta = rope_theta
-        self.halt_max_steps = halt_max_steps
-        self.halt_exploration_prob = halt_exploration_prob
-
-
 # --- Low-level and High-level Recurrent Modules (f_L, f_H) ---
 class ReasoningBlock(nn.Module):
     """
@@ -83,6 +46,6 @@ class ReasonerModule(nn.Module):
         x = hidden_state + input_injection
 
         # Process through reasoning blocks
-        for i, block in enumerate(self.blocks):
+        for block in self.blocks:
             x = block(x, cos_sin)
         return x

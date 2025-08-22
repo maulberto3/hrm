@@ -5,36 +5,139 @@
 # - Recurrent connectivity: iterative refinement, feedback, and deep supervision
 # - Adaptive computation time (ACT): Q-head for halt/continue decisions
 
-import math
 import torch
 from torch import nn
-from hrm_building_blocks import Embedding, trunc_normal_init_, Linear, RotaryEmbedding
-from hrm_reasoner import ModelConfig, ReasonerModule
+from config import ModelConfig
 from hrm_inner import HRMInner
 
 
 class HierarchicalReasonerModel(nn.Module):
     """
-    Full HRM model: combines input network, low-level and high-level recurrent modules, output network.
+    HRM model with ACT wrapper, matching the structure of HierarchicalReasoningModel_ACTV1.
+    Handles ACT loop, halting logic, exploration, Q-targets, per-sequence step tracking, and batch data reset for halted sequences.
     """
 
     def __init__(self, config: ModelConfig):
         super().__init__()
         self.config = config
         self.inner = HRMInner(config)
+        self.training = True  # Track training/eval mode
+
+    def train(self, mode: bool = True):
+        super().train(mode)
+        self.training = mode
+        self.inner.train(mode)
+        return self
+
+    def eval(self):
+        super().eval()
+        self.training = False
+        self.inner.eval()
+        return self
 
     def initial_hidden_states(self, batch_size, seq_len, device):
-        """
-        Returns initial hidden states z_H0, z_L0 for a batch.
-        """
         return self.inner.initial_hidden_states(batch_size, seq_len, device)
 
-    def forward(self, hidden_states, inputs, **kwargs):
+    def forward(
+        self,
+        hidden_states,
+        inputs,
+        halt_max_steps=None,
+        halt_exploration_prob=0.0,
+        min_halt_steps=1,
+        training=None,
+    ):
         """
-        Implements the HRM forward pass.
+        ACT wrapper: runs the inner HRM model for up to halt_max_steps, halting adaptively.
+        Adds exploration, Q-target computation, per-sequence step tracking, and batch reset.
         """
-        outputs = self.inner(hidden_states, inputs, **kwargs)
-        return outputs
+        # Use explicit training flag if provided, else use self.training
+        if training is None:
+            training = self.training
+
+        batch_size = inputs.size(0)
+        device = inputs.device
+        max_steps = halt_max_steps or self.config.halt_max_steps
+        exploration_prob = halt_exploration_prob if training else 0.0
+
+        steps = torch.zeros(batch_size, dtype=torch.int32, device=device)
+        halted = torch.zeros(batch_size, dtype=torch.bool, device=device)
+        outputs_list = []
+        current_hidden_states = hidden_states
+        current_inputs = inputs
+
+        for step in range(max_steps):
+            outputs = self.inner(current_hidden_states, current_inputs)
+            outputs["step"] = step
+            outputs_list.append(outputs)
+
+            # Exploration only in training mode
+            random_explore = (
+                torch.rand(batch_size, device=device) < exploration_prob
+                if training
+                else torch.zeros(batch_size, dtype=torch.bool, device=device)
+            )
+            random_min_steps = (
+                torch.randint(
+                    low=2, high=max_steps + 1, size=(batch_size,), device=device
+                )
+                if training
+                else torch.full((batch_size,), max_steps, device=device)
+            )
+            must_continue = (steps < random_min_steps) & random_explore
+
+            # Target Q-value computation (for Q-learning, only in training mode)
+            if training and step < max_steps - 1:
+                next_hidden_states = outputs["hidden_states"]
+                next_outputs = self.inner(next_hidden_states, current_inputs)
+                target_q_continue = torch.sigmoid(
+                    torch.where(
+                        steps + 1 >= max_steps,
+                        next_outputs["q_halt"],
+                        torch.maximum(
+                            next_outputs["q_halt"], next_outputs["q_continue"]
+                        ),
+                    )
+                )
+                outputs["target_q_continue"] = target_q_continue
+
+            # Batch data reset for halted sequences
+            reset_flag = halted | (steps >= max_steps)
+            if reset_flag.any():
+                initial_states = self.initial_hidden_states(
+                    batch_size, self.config.seq_len, device
+                )
+                for i in range(batch_size):
+                    if reset_flag[i]:
+                        for k in current_hidden_states:
+                            current_hidden_states[k][i] = initial_states[k][i]
+
+            # Halting logic (with exploration only in training)
+            should_halt_batch = torch.tensor(
+                [
+                    self.inner.should_halt(
+                        outputs["q_halt"][i],
+                        outputs["q_continue"][i],
+                        step,
+                        min_halt_steps,
+                        max_steps,
+                    )
+                    for i in range(batch_size)
+                ],
+                device=device,
+                dtype=torch.bool,
+            )
+            should_halt_batch = should_halt_batch & (~must_continue)
+            halted = halted | should_halt_batch
+
+            steps = steps + (~halted).int()
+
+            if halted.all():
+                break
+
+            current_hidden_states = outputs["hidden_states"]
+
+        return outputs_list
 
 
 # --- Paper Reference ---

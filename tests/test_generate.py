@@ -7,12 +7,10 @@ sys.path.insert(
 )
 
 from hrm import HierarchicalReasonerModel
-from hrm_reasoner import ModelConfig
+from config import ModelConfig
+from hrm_generate import generate_reasoning_text
 
-# from hrm_generate import generate_reasoning_text
 
-
-# Use CUDA if available
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -42,13 +40,8 @@ class DummyTokenizer:
 
 def test_generate_reasoning_text_basic():
     """
-    Test generate_reasoning_text method for HRM.
+    Test generate_reasoning_text for HRM with ACT.
     Checks that generation runs and returns a string.
-    Correlates with the HRM paper:
-    - Uses the full HRM model for autoregressive generation.
-    - Simulates a prompt and verifies output type.
-    - Ensures the model's output head is used for token prediction.
-    - Verifies the hierarchical reasoning and adaptive computation time mechanisms are exercised.
     """
     config = ModelConfig(
         seq_len=8,
@@ -68,6 +61,13 @@ def test_generate_reasoning_text_basic():
     output = generate_reasoning_text(
         model, tokenizer, prompt, max_length=5, temperature=1.0
     )
+    assert isinstance(output, str), "Output should be a string"
+    print("Input prompt:", prompt)
+    print("Generated output:", output)
+
+
+if __name__ == "__main__":
+    test_generate_reasoning_text_basic()
     assert isinstance(output, str), "Output should be a string"
     print("generate_reasoning_text test passed. Output:", output)
 
