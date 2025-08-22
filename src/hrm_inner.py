@@ -9,7 +9,8 @@ import math
 import torch
 from torch import nn
 from hrm_building_blocks import Embedding, trunc_normal_init_, Linear, RotaryEmbedding
-from hrm_reasoner import ModelConfig, ReasonerModule
+from hrm_reasoner import ReasonerModule
+from config import ModelConfig
 
 
 # --- Hierarchical Reasoning Model (HRM) ---
@@ -21,18 +22,21 @@ class HRMInner(nn.Module):
     def __init__(self, config: ModelConfig):
         super().__init__()
         self.config = config
+
         # Token embedding
         self.input_embedding = Embedding(
             config.vocab_size,
             config.hidden_size,
             init_std=1.0 / math.sqrt(config.hidden_size),
         )
+
         # Positional embedding (Rotary)
         self.rotary_emb = RotaryEmbedding(
             config.hidden_size // config.num_heads,
             config.seq_len,
             config.rope_theta,
         )
+
         # Output head
         self.output_head = Linear(config.hidden_size, config.vocab_size, bias=False)
         self.q_head = Linear(config.hidden_size, 2, bias=True)
@@ -42,10 +46,10 @@ class HRMInner(nn.Module):
         self.low_level_reasoner = ReasonerModule(config)
 
         # Initial states
-        self.H_init = nn.Parameter(
+        self.H_init = nn.Buffer(
             trunc_normal_init_(torch.empty(config.hidden_size), std=1)
         )
-        self.L_init = nn.Parameter(
+        self.L_init = nn.Buffer(
             trunc_normal_init_(torch.empty(config.hidden_size), std=1)
         )
 
@@ -65,7 +69,7 @@ class HRMInner(nn.Module):
         """
         ACT halting decision based on Q-values and step constraints.
         """
-        if step >= halt_max_steps - 1:  # Use -1 to match 0-indexed steps
+        if step >= (halt_max_steps - 1):  # Use -1 to match 0-indexed steps
             return True
         if (step >= min_halt_steps) and (q_halt > q_continue):
             return True
@@ -93,9 +97,6 @@ class HRMInner(nn.Module):
         self,
         hidden_states,
         inputs,
-        halt_max_steps=None,
-        halt_exploration_prob=0.0,
-        min_halt_steps=1,
     ):
         """
         Inner HRM forward pass with dynamic halting (ACT).
@@ -105,60 +106,43 @@ class HRMInner(nn.Module):
         z_H = hidden_states["high_level"]
 
         batch_size, seq_len, _ = z_H.shape
-        halted = torch.zeros(batch_size, dtype=torch.bool, device=z_H.device)
-        max_steps = halt_max_steps or self.config.halt_max_steps
 
-        for step in range(max_steps):
-            # Prepare rotary embeddings for attention
-            head_dim = self.config.hidden_size // self.config.num_heads
-            num_heads = self.config.num_heads
-            # Reshape input_emb for rotary embedding
-            input_emb_flat = input_emb.view(batch_size * num_heads, seq_len, head_dim)
-            cos_sin = self.rotary_emb(input_emb_flat)
+        # Prepare rotary embeddings for attention
+        head_dim = self.config.hidden_size // self.config.num_heads
+        num_heads = self.config.num_heads
 
-            # Forward iterations with no gradients (except last step)
-            if step < max_steps - 1:
-                with torch.no_grad():
-                    for _H_step in range(self.config.high_level_cycles):
-                        for _L_step in range(self.config.low_level_cycles):
-                            z_L = self.low_level_reasoner(
-                                z_L, z_H + input_emb, cos_sin=cos_sin
-                            )
-                        z_H = self.high_level_reasoner(z_H, z_L, cos_sin=cos_sin)
-            else:
-                # Final step with gradients (1-step grad approximation)
-                for _H_step in range(self.config.high_level_cycles):
-                    for _L_step in range(self.config.low_level_cycles):
+        # Reshape input_emb for rotary embedding
+        input_emb_flat = input_emb.view(batch_size * num_heads, seq_len, head_dim)
+        cos_sin = self.rotary_emb(input_emb_flat)
+
+        # Forward iterations with no gradients (except last step)
+        with torch.no_grad():
+            for _H_step in range(self.config.high_level_cycles):
+                for _L_step in range(self.config.low_level_cycles):
+                    # Only update z_L if not last H/L step
+                    if not (
+                        (_H_step == self.config.high_level_cycles - 1)
+                        and (_L_step == self.config.low_level_cycles - 1)
+                    ):
                         z_L = self.low_level_reasoner(
                             z_L, z_H + input_emb, cos_sin=cos_sin
                         )
+                # Only update z_H if not last H step
+                if not (_H_step == self.config.high_level_cycles - 1):
                     z_H = self.high_level_reasoner(z_H, z_L, cos_sin=cos_sin)
 
-            # Generate outputs
-            output_logits = self.output_head(z_H)
-            q_logits = self.q_head(z_H[:, 0])  # Use first token for Q-values
-            q_halt = torch.sigmoid(q_logits[:, 0])
-            q_continue = torch.sigmoid(q_logits[:, 1])
+        # Final step with gradients (1-step grad approximation)
+        z_L = self.low_level_reasoner(z_L, z_H + input_emb, cos_sin=cos_sin)
+        z_H = self.high_level_reasoner(z_H, z_L, cos_sin=cos_sin)
 
-            # Halting logic
-            should_halt_batch = torch.tensor(
-                [
-                    self.should_halt(
-                        q_halt[i], q_continue[i], step, min_halt_steps, max_steps
-                    )
-                    for i in range(batch_size)
-                ],
-                device=z_H.device,
-                dtype=torch.bool,
-            )
+        # Generate outputs
+        output_logits = self.output_head(z_H)
 
-            halted = halted | should_halt_batch
+        # Q head
+        q_logits = self.q_head(z_H[:, 0])  # Use first token for Q-values
+        q_halt = torch.sigmoid(q_logits[:, 0])
+        q_continue = torch.sigmoid(q_logits[:, 1])
 
-            # If all sequences have halted, break
-            if halted.all():
-                break
-
-        # Return final outputs
         return {
             "output": output_logits,
             "hidden_states": {
@@ -167,5 +151,4 @@ class HRMInner(nn.Module):
             },
             "q_halt": q_halt,
             "q_continue": q_continue,
-            "step": step,
         }

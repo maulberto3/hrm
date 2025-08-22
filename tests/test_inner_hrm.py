@@ -7,7 +7,7 @@ sys.path.insert(
 )
 
 from hrm_inner import HRMInner
-from hrm_reasoner import ModelConfig
+from config import ModelConfig
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -35,10 +35,18 @@ def test_hrm_inner_basic():
 
     model = HRMInner(config).to(device)
     inputs = torch.randint(0, config.vocab_size, (batch_size, seq_len), device=device)
+    print("Input shape:", inputs.shape)
     hidden_states = model.initial_hidden_states(batch_size, seq_len, device)
 
     outputs = model(hidden_states, inputs)
-
+    print(f"\n[HRMInner Test]")
+    print(f"Input shape: {inputs.shape}")
+    print(f"Hidden states high_level shape: {hidden_states['high_level'].shape}")
+    print(f"Hidden states low_level shape: {hidden_states['low_level'].shape}")
+    print(f"Output shape: {outputs['output'].shape}")
+    print(f"Output sample: {outputs['output'][0,0,:4].detach().cpu().numpy()}")
+    print(f"High-level hidden shape: {outputs['hidden_states']['high_level'].shape}")
+    print(f"Low-level hidden shape: {outputs['hidden_states']['low_level'].shape}")
     assert "output" in outputs, "Output should contain 'output' key"
     assert "hidden_states" in outputs, "Output should contain 'hidden_states' key"
     assert outputs["output"].shape == (
@@ -56,8 +64,7 @@ def test_hrm_inner_basic():
         seq_len,
         config.hidden_size,
     ), f"Unexpected low_level shape: {outputs['hidden_states']['low_level'].shape}"
-
-    print("HRMInner essential test passed. Output shape:", outputs["output"].shape)
+    print("HRMInner essential test passed.")
 
 
 if __name__ == "__main__":

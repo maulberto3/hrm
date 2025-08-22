@@ -67,7 +67,7 @@ logger.info("Model and optimizer initialized.")
 
 # --- Training loop ---
 logger.info("STARTING TRAINING LOOP...")
-max_deliberation = model_cfg_dict.get("max_deliberation", 1)
+max_halt_steps = model_cfg_dict.get("max_halt_steps", 1)
 
 avg_loss, trained_model = train_model(
     model,
@@ -77,7 +77,7 @@ avg_loss, trained_model = train_model(
     DEVICE,
     epochs=EPOCHS,
     use_act=USE_ACT,
-    max_deliberation=max_deliberation,
+    max_halt_steps=max_halt_steps,
     logger=logger,
     quick_run=QUICK_RUN,
 )

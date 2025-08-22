@@ -7,11 +7,11 @@ sys.path.insert(
 )
 
 from hrm_reasoner import (
-    ModelConfig,
     ReasoningBlock,
     ReasonerModule,
 )
 from hrm_building_blocks import RotaryEmbedding
+from config import ModelConfig
 
 # Use CUDA if available
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -53,19 +53,20 @@ def test_reasoning_block_basic():
     cos_sin = rotary_emb(input_tensor_flat)
 
     output = reasoning_block(input_tensor, cos_sin)
-
+    print(f"\n[ReasoningBlock Test]")
+    print(f"Input shape: {input_tensor.shape}")
+    print(f"Output shape: {output.shape}")
+    print(f"Output sample: {output[0,0,:4].detach().cpu().numpy()}")
     assert output.shape == (
         batch_size,
         config.seq_len,
         hidden_size,
     ), f"Unexpected shape: {output.shape}"
-
     # Verify ReasoningBlock actually processes the input
     assert not torch.allclose(
         input_tensor, output, atol=1e-3
     ), "ReasoningBlock should transform input"
-
-    print("ReasoningBlock test passed. Output shape:", output.shape)
+    print("ReasoningBlock test passed.")
 
 
 def test_reasoner_module_basic():
@@ -106,7 +107,11 @@ def test_reasoner_module_basic():
     cos_sin = rotary_emb(input_injection_flat)
 
     output = reasoner_module(hidden_state, input_injection, cos_sin)
-
+    print(f"\n[ReasonerModule Test]")
+    print(f"Input shape: {hidden_state.shape}")
+    print(f"Input injection shape: {input_injection.shape}")
+    print(f"Output shape: {output.shape}")
+    print(f"Output sample: {output[0,0,:4].detach().cpu().numpy()}")
     assert output.shape == (
         batch_size,
         config.seq_len,
@@ -116,7 +121,7 @@ def test_reasoner_module_basic():
     assert not torch.allclose(
         hidden_state, output, atol=1e-3
     ), "ReasonerModule should transform input"
-    print("ReasonerModule test passed. Output shape:", output.shape)
+    print("ReasonerModule test passed.")
 
 
 if __name__ == "__main__":
