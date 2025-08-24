@@ -38,32 +38,25 @@ class HierarchicalReasonerModel(nn.Module):
     def initial_hidden_states(self, batch_size, seq_len, device):
         return self.inner.initial_hidden_states(batch_size, seq_len, device)
 
-    def forward(
-        self,
-        hidden_states,
-        inputs,
-        halt_max_steps=None,
-        halt_exploration_prob=0.0,
-        min_halt_steps=1,
-        training=None,
-    ):
+    def forward(self, inputs):
         """
-        ACT wrapper: runs the inner HRM model for up to halt_max_steps, halting adaptively.
-        Adds exploration, Q-target computation, per-sequence step tracking, and batch reset.
+        Abstracted ACT wrapper: runs the inner HRM model for up to halt_max_steps (from config), halting adaptively.
+        All ACT arguments and hidden state initialization are handled internally. User only provides inputs.
+        Output logits from self.inner exclude the first token (CLS): shape [batch_size, seq_len-1, vocab_size].
         """
-        # Use explicit training flag if provided, else use self.training
-        if training is None:
-            training = self.training
-
+        training = self.training
         batch_size = inputs.size(0)
         device = inputs.device
-        max_steps = halt_max_steps or self.config.halt_max_steps
-        exploration_prob = halt_exploration_prob if training else 0.0
+        max_steps = self.config.halt_max_steps
+        exploration_prob = self.config.halt_exploration_prob if training else 0.0
+        halt_min_steps = self.config.halt_min_steps
 
         steps = torch.zeros(batch_size, dtype=torch.int32, device=device)
         halted = torch.zeros(batch_size, dtype=torch.bool, device=device)
         outputs_list = []
-        current_hidden_states = hidden_states
+        current_hidden_states = self.initial_hidden_states(
+            batch_size, self.config.seq_len, device
+        )
         current_inputs = inputs
 
         for step in range(max_steps):
@@ -119,7 +112,7 @@ class HierarchicalReasonerModel(nn.Module):
                         outputs["q_halt"][i],
                         outputs["q_continue"][i],
                         step,
-                        min_halt_steps,
+                        halt_min_steps,
                         max_steps,
                     )
                     for i in range(batch_size)
