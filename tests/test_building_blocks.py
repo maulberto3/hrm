@@ -94,8 +94,8 @@ def test_rotary_embedding_basic():
     print(f"\n[RotaryEmbedding Test]")
     print(f"Input shape: {input_tensor.shape}")
     print(f"Cos shape: {output[0].shape}, Sin shape: {output[1].shape}")
-    print(f"Cos: {output[0].detach().cpu().numpy()}")
-    print(f"Sin: {output[1].detach().cpu().numpy()}")
+    # print(f"Cos (sample): {output[0][:5, :5].detach().cpu().numpy()}")
+    # print(f"Sin (sample): {output[1][:5, :5].detach().cpu().numpy()}")
 
     # Illustrate multi-head attention reshaping as in Reasoner test
     model_dim = 64
@@ -172,7 +172,7 @@ def test_attention_basic():
     # Causal attention
     attention_causal = Attention(dim, head_dim, num_heads, causal=True).to(device)
     output_causal = attention_causal(input_tensor, cos_sin)
-    print(f"\n[Attention Test - Causal]")
+    print(f"[Attention Test - Causal]")
     print(f"Input shape: {input_tensor.shape}")
     print(f"Output shape: {output_causal.shape}")
     print(f"Output sample: {output_causal[0,0,:4].detach().cpu().numpy()}")
@@ -226,13 +226,6 @@ def test_swiglu_basic():
     ), "SwiGLU should transform input"
     print("SwiGLU test passed.")
 
-
-if __name__ == "__main__":
-    test_embedding_basic()
-    test_linear_basic()
-    test_rotary_embedding_basic()
-    test_attention_basic()
-    test_swiglu_basic()
 
 """
 Overall HRM data flow:
