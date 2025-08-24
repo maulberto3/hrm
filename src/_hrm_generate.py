@@ -17,13 +17,13 @@ def generate_reasoning_text(model, tokenizer, prompt, max_length=100, temperatur
 
     generated = input_ids
     for _ in range(max_length):
-        # Forward pass through ACT wrapper (no exploration, min_halt_steps=1)
+        # Forward pass through ACT wrapper (no exploration, halt_min_steps=1)
         outputs_list = model(
             hidden_states,
             generated,
             halt_max_steps=model.config.halt_max_steps,
             halt_exploration_prob=0.0,
-            min_halt_steps=1,
+            halt_min_steps=1,
         )
         final_outputs = outputs_list[-1]  # Use last ACT step
 
