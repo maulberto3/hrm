@@ -19,6 +19,7 @@ class ModelConfig:
         rope_theta=10000.0,
         halt_max_steps=16,
         halt_exploration_prob=0.1,
+        halt_min_steps=1,
         **kwargs,  # Accept and ignore extra keys
     ):
         self.seq_len = seq_len
@@ -33,6 +34,7 @@ class ModelConfig:
         self.rope_theta = rope_theta
         self.halt_max_steps = halt_max_steps
         self.halt_exploration_prob = halt_exploration_prob
+        self.halt_min_steps = halt_min_steps
 
 
 small_model_config = {
@@ -48,6 +50,7 @@ small_model_config = {
     "rope_theta": 10000.0,
     "halt_max_steps": 4,
     "halt_exploration_prob": 0.05,
+    "halt_min_steps": 1,
     "batch_size": 2,
     "n_epochs": 1,
 }
@@ -65,8 +68,6 @@ small_training_config = {
     "beta2": 0.99,
     "eval_interval": 10,
     "checkpoint_every_eval": False,
-    "halt_max_steps": 8,
-    "halt_exploration_prob": 0.05,
 }
 
 big_model_config = {
@@ -82,6 +83,7 @@ big_model_config = {
     "rope_theta": 10000.0,
     "halt_max_steps": 32,
     "halt_exploration_prob": 0.1,
+    "halt_min_steps": 1,
     "batch_size": 32,
     "n_epochs": 50,
 }
@@ -99,8 +101,6 @@ big_training_config = {
     "beta2": 0.95,
     "eval_interval": 1000,
     "checkpoint_every_eval": True,
-    "halt_max_steps": 32,
-    "halt_exploration_prob": 0.1,
 }
 
 # Consistency checks:
