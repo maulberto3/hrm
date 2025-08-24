@@ -65,13 +65,13 @@ class HRMInner(nn.Module):
         input_emb = self.input_embedding(inputs) * math.sqrt(self.config.hidden_size)
         return input_emb
 
-    def should_halt(self, q_halt, q_continue, step, min_halt_steps, halt_max_steps):
+    def should_halt(self, q_halt, q_continue, step, halt_min_steps, halt_max_steps):
         """
         ACT halting decision based on Q-values and step constraints.
         """
         if step >= (halt_max_steps - 1):  # Use -1 to match 0-indexed steps
             return True
-        if (step >= min_halt_steps) and (q_halt > q_continue):
+        if (step >= halt_min_steps) and (q_halt > q_continue):
             return True
         return False
 
@@ -135,11 +135,11 @@ class HRMInner(nn.Module):
         z_L = self.low_level_reasoner(z_L, z_H + input_emb, cos_sin=cos_sin)
         z_H = self.high_level_reasoner(z_H, z_L, cos_sin=cos_sin)
 
-        # Generate outputs
-        output_logits = self.output_head(z_H)
+        # Generate outputs: exclude first token (CLS)
+        output_logits = self.output_head(z_H)[:, 1:]
 
-        # Q head
-        q_logits = self.q_head(z_H[:, 0])  # Use first token for Q-values
+        # Q head: still use first token for Q-values
+        q_logits = self.q_head(z_H[:, 0])
         q_halt = torch.sigmoid(q_logits[:, 0])
         q_continue = torch.sigmoid(q_logits[:, 1])
 
