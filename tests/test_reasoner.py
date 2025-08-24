@@ -122,8 +122,3 @@ def test_reasoner_module_basic():
         hidden_state, output, atol=1e-3
     ), "ReasonerModule should transform input"
     print("ReasonerModule test passed.")
-
-
-if __name__ == "__main__":
-    test_reasoning_block_basic()
-    test_reasoner_module_basic()
