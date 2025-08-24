@@ -34,6 +34,10 @@ DATASOURCE = {
     "sherlock_holmes": "https://www.gutenberg.org/ebooks/1661.txt.utf-8",
     "war_and_peace": "https://www.gutenberg.org/ebooks/2600.txt.utf-8",
 }
+
+# Tokenization with Byte-Pair Encoding (BPE)
+SPECIAL_TOKENS = ["[CLS]", "[pad]", "[eos]"]
+
 # Download each book if not already cached in the data directory
 for filename, url in DATASOURCE.items():
     file_path = os.path.join(DATA_DIR, f"{filename}.txt")
@@ -85,15 +89,12 @@ def get_dataset_text():
     return all_text
 
 
-# Tokenization with Byte-Pair Encoding (BPE)
-SPECIAL_TOKENS = ["[CLS]", "[pad]", "[eos]"]
-
 # Dynamically set VOCAB_SIZE from config
 try:
-    from small_config import small_model_config as model_cfg_dict
+    from config import small_model_config as model_cfg_dict
 except ImportError:
     try:
-        from big_config import big_model_config as model_cfg_dict
+        from config import big_model_config as model_cfg_dict
     except ImportError:
         model_cfg_dict = {"vocab_size": 10000}
 
@@ -151,5 +152,4 @@ class GutenbergDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         # Prepend CLS token to each sequence for model input
         seq = [self.cls_token_id] + self.encoded[idx : idx + self.seq_len - 1]
-        return torch.tensor(seq)
         return torch.tensor(seq)
