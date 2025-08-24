@@ -8,7 +8,7 @@ sys.path.insert(
 
 from hrm import HierarchicalReasonerModel
 from config import ModelConfig
-from hrm_generate import generate_reasoning_text
+from _hrm_generate import generate_reasoning_text
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
