@@ -33,12 +33,17 @@ def test_hrm_inner_basic():
     batch_size = 2
     seq_len = config.seq_len
 
-    model = HRMInner(config).to(device)
+    inner_model = HRMInner(config).to(device)
+
+    # Assuming first token is CLS as per paper and here implemented in dataloader (not inside model)
     inputs = torch.randint(0, config.vocab_size, (batch_size, seq_len), device=device)
     print("Input shape:", inputs.shape)
-    hidden_states = model.initial_hidden_states(batch_size, seq_len, device)
 
-    outputs = model(hidden_states, inputs)
+    hidden_states = inner_model.initial_hidden_states(batch_size, seq_len, device)
+    print("Hidden states (high_level) shape:", hidden_states["high_level"].shape)
+    print("Hidden states (low_level) shape:", hidden_states["low_level"].shape)
+
+    outputs = inner_model(hidden_states, inputs)
     print(f"\n[HRMInner Test]")
     print(f"Input shape: {inputs.shape}")
     print(f"Hidden states high_level shape: {hidden_states['high_level'].shape}")
@@ -49,9 +54,10 @@ def test_hrm_inner_basic():
     print(f"Low-level hidden shape: {outputs['hidden_states']['low_level'].shape}")
     assert "output" in outputs, "Output should contain 'output' key"
     assert "hidden_states" in outputs, "Output should contain 'hidden_states' key"
+    # Output excludes CLS token: shape [batch_size, seq_len-1, vocab_size]
     assert outputs["output"].shape == (
         batch_size,
-        seq_len,
+        seq_len - 1,
         config.vocab_size,
     ), f"Unexpected output shape: {outputs['output'].shape}"
     assert outputs["hidden_states"]["high_level"].shape == (
@@ -65,7 +71,3 @@ def test_hrm_inner_basic():
         config.hidden_size,
     ), f"Unexpected low_level shape: {outputs['hidden_states']['low_level'].shape}"
     print("HRMInner essential test passed.")
-
-
-if __name__ == "__main__":
-    test_hrm_inner_basic()
