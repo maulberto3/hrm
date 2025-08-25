@@ -21,9 +21,11 @@ def test_reasoning_block_basic():
     """
     Test ReasoningBlock - combines attention, MLP, and normalization.
     """
+    print("\n=== TEST: test_reasoning_block_basic ===")
+
     # ModelConfig needs to be created to instantiate ReasoningBlock
     config = ModelConfig(
-        seq_len=8,
+        seq_len=128,
         vocab_size=100,
         high_level_cycles=2,
         low_level_cycles=2,
@@ -36,6 +38,8 @@ def test_reasoning_block_basic():
         halt_max_steps=16,
         halt_exploration_prob=0.1,
     )
+    print("\nModel config:", config.__dict__)
+
     batch_size = 2
     hidden_size = config.hidden_size
     head_dim = hidden_size // config.num_heads
@@ -53,7 +57,6 @@ def test_reasoning_block_basic():
     cos_sin = rotary_emb(input_tensor_flat)
 
     output = reasoning_block(input_tensor, cos_sin)
-    print(f"\n[ReasoningBlock Test]")
     print(f"Input shape: {input_tensor.shape}")
     print(f"Output shape: {output.shape}")
     print(f"Output sample: {output[0,0,:4].detach().cpu().numpy()}")
@@ -73,13 +76,15 @@ def test_reasoner_module_basic():
     """
     Test ReasonerModule - stacks multiple ReasoningBlocks.
     """
+    print("\n=== TEST: test_reasoner_module_basic ===")
+
     config = ModelConfig(
-        seq_len=8,
+        seq_len=32,
         vocab_size=100,
         high_level_cycles=2,
         low_level_cycles=2,
         num_layers=2,
-        hidden_size=64,
+        hidden_size=96,
         num_heads=4,
         expansion=4,
         norm_epsilon=0.1,
@@ -87,6 +92,8 @@ def test_reasoner_module_basic():
         halt_max_steps=16,
         halt_exploration_prob=0.1,
     )
+    print("\nModel config:", config.__dict__)
+
     batch_size = 2
     hidden_size = config.hidden_size
     head_dim = hidden_size // config.num_heads
@@ -107,7 +114,6 @@ def test_reasoner_module_basic():
     cos_sin = rotary_emb(input_injection_flat)
 
     output = reasoner_module(hidden_state, input_injection, cos_sin)
-    print(f"\n[ReasonerModule Test]")
     print(f"Input shape: {hidden_state.shape}")
     print(f"Input injection shape: {input_injection.shape}")
     print(f"Output shape: {output.shape}")

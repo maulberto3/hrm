@@ -17,18 +17,20 @@ def test_hrm_model_act_wrapper_train():
     Essential test for HierarchicalReasonerModel ACT wrapper in training mode.
     Checks output list length, output shapes, keys, and Q-learning targets.
     """
+    print("\n=== TEST: test_hrm_model_act_wrapper_train ===")
     config = ModelConfig(
-        seq_len=8,
+        seq_len=16,
         vocab_size=100,
         high_level_cycles=2,
         low_level_cycles=2,
         num_layers=2,
-        hidden_size=64,
+        hidden_size=192,
         num_heads=4,
         expansion=4,
         halt_max_steps=4,
         halt_exploration_prob=0.1,
     )
+    print("\nModel config:", config.__dict__)
     batch_size = 2
     seq_len = config.seq_len
     model = HierarchicalReasonerModel(config).to(device)
@@ -36,7 +38,8 @@ def test_hrm_model_act_wrapper_train():
 
     # Dummy batch: [batch_size, seq_len] (CLS handled by dataloader in real data)
     inputs = torch.randint(0, config.vocab_size, (batch_size, seq_len), device=device)
-    print("\nInput shape:", inputs.shape)
+    print("Model config:", config.__dict__)
+    print("Input shape:", inputs.shape)
 
     outputs_list = model(inputs)
 
@@ -85,4 +88,4 @@ def test_hrm_model_act_wrapper_train():
                 "target_q_continue" in outputs
             ), "Output should contain 'target_q_continue' for Q-learning"
 
-    print(f"HRM ACT wrapper TRAIN test passed. ACT steps: {len(outputs_list)}")
+        print(f"HRM ACT wrapper TRAIN test passed. ACT steps: {len(outputs_list)}")

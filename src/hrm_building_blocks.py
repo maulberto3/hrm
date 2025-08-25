@@ -131,14 +131,15 @@ def rotate_half(x: torch.Tensor):
 def apply_rotary_pos_emb(
     q: torch.Tensor, k: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor
 ):
-    # q, k: [bs, seq_len, num_heads, head_dim]
+    # q, k: [batch_size * num_heads, seq_len, head_dim]
     # cos, sin: [seq_len, head_dim]
     orig_dtype = q.dtype
     q = q.to(cos.dtype)
     k = k.to(cos.dtype)
 
-    cos_unsqueeze = cos.unsqueeze(-2)
-    sin_unsqueeze = sin.unsqueeze(-2)
+    # cos, sin: [seq_len, head_dim] -> [1, seq_len, head_dim] to broadcast with [batch_size * num_heads, seq_len, head_dim]
+    cos_unsqueeze = cos.unsqueeze(0)
+    sin_unsqueeze = sin.unsqueeze(0)
 
     q_cos = q * cos_unsqueeze
     q_sin = rotate_half(q) * sin_unsqueeze

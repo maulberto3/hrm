@@ -19,6 +19,8 @@ def test_embedding_basic():
     HRM Context: Converts discrete token IDs into continuous vector representations,
                  serving as the initial input to the model.
     """
+    print("\n=== TEST: test_embedding_basic ===")
+
     vocab_size = 10
     dim = 16
     batch_size = 4
@@ -29,7 +31,6 @@ def test_embedding_basic():
     input_ids = torch.randint(0, vocab_size, (batch_size, seq_len), device=device)
     # Output: embeddings [batch_size, seq_len, dim]
     output = embedding(input_ids)
-    print(f"\n[Embedding Test]")
     print(f"Input IDs shape: {input_ids.shape}")
     print(f"Output shape: {output.shape}")
     print(f"Output sample: {output[0,0,:4].detach().cpu().numpy()}")
@@ -51,6 +52,8 @@ def test_linear_basic():
                  - Q-ACT head (hidden_size -> 2, halt/continue)
                  - Gate/Up/Down projections in SwiGLU
     """
+    print("\n=== TEST: test_linear_basic ===")
+
     in_dim = 16
     out_dim = 32
     batch_size = 4
@@ -61,7 +64,6 @@ def test_linear_basic():
     input_tensor = torch.randn(batch_size, seq_len, in_dim, device=device)
     # Output: [batch_size, seq_len, out_dim]
     output = linear(input_tensor)
-    print(f"\n[Linear Test]")
     print(f"Input shape: {input_tensor.shape}")
     print(f"Output shape: {output.shape}")
     print(f"Output sample: {output[0,0,:4].detach().cpu().numpy()}")
@@ -81,6 +83,8 @@ def test_rotary_embedding_basic():
     - Applied to query and key tensors within the Attention layer.
     - Encodes positional information into the attention mechanism.
     """
+    print("\n=== TEST: test_rotary_embedding_basic ===")
+
     head_dim = 64  # head_dim in attention
     max_length = 128
     batch_size = 4
@@ -91,7 +95,6 @@ def test_rotary_embedding_basic():
     input_tensor = torch.randn(batch_size, seq_len, head_dim, device=device)
     # Output: (cos, sin) - tuple of tensors
     output = rotary_emb(input_tensor)
-    print(f"\n[RotaryEmbedding Test]")
     print(f"Input shape: {input_tensor.shape}")
     print(f"Cos shape: {output[0].shape}, Sin shape: {output[1].shape}")
     # print(f"Cos (sample): {output[0][:5, :5].detach().cpu().numpy()}")
@@ -138,6 +141,8 @@ def test_attention_basic():
     """
     Test Attention layer - enables information flow between tokens.
     """
+    print("\n=== TEST: test_attention_basic ===")
+
     dim = 64
     head_dim = 16
     num_heads = 4
@@ -156,10 +161,11 @@ def test_attention_basic():
     # Non-causal attention
     attention_noncausal = Attention(dim, head_dim, num_heads, causal=False).to(device)
     output_noncausal = attention_noncausal(input_tensor, cos_sin)
-    print(f"\n[Attention Test - Noncausal]")
     print(f"Input shape: {input_tensor.shape}")
-    print(f"Output shape: {output_noncausal.shape}")
-    print(f"Output sample: {output_noncausal[0,0,:4].detach().cpu().numpy()}")
+    print(f"Output shape (noncausal): {output_noncausal.shape}")
+    print(
+        f"Output sample (noncausal): {output_noncausal[0,0,:4].detach().cpu().numpy()}"
+    )
     assert output_noncausal.shape == (
         batch_size,
         seq_len,
@@ -172,10 +178,8 @@ def test_attention_basic():
     # Causal attention
     attention_causal = Attention(dim, head_dim, num_heads, causal=True).to(device)
     output_causal = attention_causal(input_tensor, cos_sin)
-    print(f"[Attention Test - Causal]")
-    print(f"Input shape: {input_tensor.shape}")
-    print(f"Output shape: {output_causal.shape}")
-    print(f"Output sample: {output_causal[0,0,:4].detach().cpu().numpy()}")
+    print(f"Output shape (causal): {output_causal.shape}")
+    print(f"Output sample (causal): {output_causal[0,0,:4].detach().cpu().numpy()}")
     assert output_causal.shape == (
         batch_size,
         seq_len,
@@ -201,6 +205,8 @@ def test_swiglu_basic():
     - Activation function within the ReasoningBlock's MLP.
     - Introduces non-linearity for more complex feature transformations.
     """
+    print("\n=== TEST: test_swiglu_basic ===")
+
     dim = 64
     expansion = 4.0
     batch_size = 2
@@ -211,7 +217,6 @@ def test_swiglu_basic():
     input_tensor = torch.randn(batch_size, seq_len, dim, device=device)
     # Output: [batch_size, seq_len, dim]
     output = swiglu(input_tensor)
-    print(f"\n[SwiGLU Test]")
     print(f"Input shape: {input_tensor.shape}")
     print(f"Output shape: {output.shape}")
     print(f"Output sample: {output[0,0,:4].detach().cpu().numpy()}")
