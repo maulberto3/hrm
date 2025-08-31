@@ -44,6 +44,7 @@ class HierarchicalReasonerModel(nn.Module):
         All ACT arguments and hidden state initialization are handled internally. User only provides inputs.
         Output logits from self.inner exclude the first token (CLS): shape [batch_size, seq_len-1, vocab_size].
         """
+        # First, we extract necessary variables
         training = self.training
         batch_size = inputs.size(0)
         device = inputs.device
@@ -51,6 +52,7 @@ class HierarchicalReasonerModel(nn.Module):
         exploration_prob = self.config.halt_exploration_prob if training else 0.0
         halt_min_steps = self.config.halt_min_steps
 
+        # Then, we initialize tracking tensors and variables
         steps = torch.zeros(batch_size, dtype=torch.int32, device=device)
         halted = torch.zeros(batch_size, dtype=torch.bool, device=device)
         outputs_list = []
@@ -59,6 +61,11 @@ class HierarchicalReasonerModel(nn.Module):
         )
         current_inputs = inputs
 
+        # And we start the ACT (Adaptive Computation Time) loop
+        # where we iteratively refine the hidden states and outputs
+        # In training, this involves computing Q-values network learning
+        # and
+        # In eval, we focus on exploitation, i.e. selecting the action with the highest Q-value
         for step in range(max_steps):
             outputs = self.inner(current_hidden_states, current_inputs)
             outputs["step"] = step
@@ -77,11 +84,20 @@ class HierarchicalReasonerModel(nn.Module):
                 if training
                 else torch.full((batch_size,), max_steps, device=device)
             )
+            # Continue reasoning even if halt reached, to encourage exploration
+            # In eval, no forced exploration, just follow best Q-values
             must_continue = (steps < random_min_steps) & random_explore
 
             # Target Q-value computation (for Q-learning, only in training mode)
-            if training and step < max_steps - 1:
+            if training and step < (max_steps - 1):
                 next_hidden_states = outputs["hidden_states"]
+                # Compute target Q-values for the next step by:
+                # asking the model a new inner reasoning forward pass over same inputs
+                # but with the fresh new hidden states (out from previous reasoning)
+                # In Q-learning theory, this would be akin to bootstrapping
+                # where we use the next state's Q-values to get the target for current state
+                # Although we don't have a fixed separate target network for this task,
+                # we can still compute the target Q-values using the next hidden states
                 next_outputs = self.inner(next_hidden_states, current_inputs)
                 target_q_continue = torch.sigmoid(
                     torch.where(
@@ -94,16 +110,22 @@ class HierarchicalReasonerModel(nn.Module):
                 )
                 outputs["target_q_continue"] = target_q_continue
 
-            # Batch data reset for halted sequences
+            # Check if any sequence has halted or reached max steps
+            # If so, we need to reset their hidden states, because
+            # we want to ensure that each sequence starts fresh
             reset_flag = halted | (steps >= max_steps)
             if reset_flag.any():
                 initial_states = self.initial_hidden_states(
                     batch_size, self.config.seq_len, device
                 )
-                for i in range(batch_size):
-                    if reset_flag[i]:
-                        for k in current_hidden_states:
-                            current_hidden_states[k][i] = initial_states[k][i]
+                # Avoid in-place operations that break gradient computation
+                new_hidden_states = {}
+                for k in current_hidden_states:
+                    new_hidden_states[k] = current_hidden_states[k].clone()
+                    for i in range(batch_size):
+                        if reset_flag[i]:
+                            new_hidden_states[k][i] = initial_states[k][i]
+                current_hidden_states = new_hidden_states
 
             # Halting logic (with exploration only in training)
             should_halt_batch = torch.tensor(
@@ -120,9 +142,11 @@ class HierarchicalReasonerModel(nn.Module):
                 device=device,
                 dtype=torch.bool,
             )
+            # Halting logic is applied, but exploration can override it.
             should_halt_batch = should_halt_batch & (~must_continue)
             halted = halted | should_halt_batch
 
+            # Update steps
             steps = steps + (~halted).int()
 
             if halted.all():
