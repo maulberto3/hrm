@@ -4,21 +4,26 @@ import torch
 import tokenizers
 import logging
 
-# --- Logger setup ---
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(message)s",
-)
-logger = logging.getLogger("hrm_data")
+# Suppress tokenizers parallelism warning
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+# Logger setup (module-level, best practice)
+logger = logging.getLogger(__name__)
 
-####################
-# DATA
-####################
+# Dynamically set VOCAB_SIZE from config
+try:
+    from config import small_model_config as model_cfg_dict
+except ImportError:
+    from config import big_model_config as model_cfg_dict
 
-# Download novels from Project Gutenberg
+VOCAB_SIZE = model_cfg_dict.get("vocab_size", 10000)
+tokenizer_path = f"data/gutenberg_tokenizer_vocab_size_{VOCAB_SIZE}.json"
+
+# Tokenization with Byte-Pair Encoding (BPE)
+SPECIAL_TOKENS = ["[CLS]", "[pad]", "[eos]"]
+
+# Data directory for storing downloaded texts
 DATA_DIR = "data"
-os.makedirs(DATA_DIR, exist_ok=True)  # Ensure the data directory exists
 
 # Mapping of book names to their download URLs
 DATASOURCE = {
@@ -35,92 +40,105 @@ DATASOURCE = {
     "war_and_peace": "https://www.gutenberg.org/ebooks/2600.txt.utf-8",
 }
 
-# Tokenization with Byte-Pair Encoding (BPE)
-SPECIAL_TOKENS = ["[CLS]", "[pad]", "[eos]"]
 
-# Download each book if not already cached in the data directory
-for filename, url in DATASOURCE.items():
-    file_path = os.path.join(DATA_DIR, f"{filename}.txt")
-    if not os.path.exists(file_path):
-        logger.info(f"Downloading {filename} from {url}")
-        response = requests.get(url)
-        with open(file_path, "wb") as f:
-            f.write(response.content)
-        logger.info(f"Saved {filename} to {file_path}")
-    else:
-        logger.info(f"Using cached file for {filename[:5]}")
+# Download text files from Project Gutenberg
+def download_text():
+    os.makedirs(DATA_DIR, exist_ok=True)
+    for filename, url in DATASOURCE.items():
+        file_path = os.path.join(DATA_DIR, f"{filename}.txt")
+        if not os.path.exists(file_path):
+            logger.info(f"Downloading {filename} from {url}")
+            response = requests.get(url)
+            with open(file_path, "wb") as f:
+                f.write(response.content)
+            logger.info(f"Saved {filename} to {file_path}")
+        else:
+            logger.info(f"Using cached file for {filename[:5]}")
 
 
 # Read and preprocess the text from a Gutenberg file
 def preprocess_gutenberg(filename):
+    """
+    Ensure the file is downloaded, then preprocess the text from a Gutenberg file.
+    - Downloads the file if not present.
+    - Extracts main content between Gutenberg markers.
+    - Removes empty lines and extra spaces.
+    """
+
     logger.info(f"Preprocessing {filename}")
     with open(filename, "r", encoding="utf-8") as f:
         text = f.read()
 
     # Find the start and end of the actual content using Gutenberg markers
-    start = text.find("*** START OF THE PROJECT GUTENBERG EBOOK")
-    start = text.find("\n", start) + 1
-    end = text.find("*** END OF THE PROJECT GUTENBERG EBOOK")
+    start_marker = "*** START OF THE PROJECT GUTENBERG EBOOK"
+    end_marker = "*** END OF THE PROJECT GUTENBERG EBOOK"
+    start = text.find(start_marker)
+    if start != -1:
+        start = text.find("\n", start) + 1
+    else:
+        start = 0  # If marker not found, start at beginning
+    end = text.find(end_marker)
+    if end == -1:
+        end = len(text)  # If marker not found, go to end
 
     # Extract the main content between the markers
-    text = text[start:end].strip()
+    main_text = text[start:end].strip()
 
     # Basic preprocessing: remove empty lines and extra spaces
-    text = "\n".join(line.strip() for line in text.split("\n") if line.strip())
-    return text
+    processed_text = "\n".join(
+        line.strip() for line in main_text.split("\n") if line.strip()
+    )
+    return processed_text
 
 
 # Get all texts from the dataset, one per book
 def get_dataset_text():
+    # Ensure all files are downloaded before preprocessing
+    download_text()
+
     logger.info("Loading and preprocessing all dataset texts")
     concat_path = os.path.join(DATA_DIR, "concatenated_gutenberg.txt")
     if os.path.exists(concat_path):
         logger.info(f"Loading cached concatenated text from {concat_path}")
         with open(concat_path, "r", encoding="utf-8") as f:
             return [f.read()]
-    all_text = []
-    for filename in DATASOURCE:
-        file_path = os.path.join(DATA_DIR, f"{filename}.txt")
-        text = preprocess_gutenberg(file_path)
-        all_text.append(text)
-    # Cache concatenated text for future runs
-    with open(concat_path, "w", encoding="utf-8") as f:
-        f.write(" ".join(all_text))
-    return all_text
+    else:
+        all_text = []
+        for filename in DATASOURCE:
+            file_path = os.path.join(DATA_DIR, f"{filename}.txt")
+            text = preprocess_gutenberg(file_path)
+            all_text.append(text)
+        # Cache concatenated text for future runs
+        with open(concat_path, "w", encoding="utf-8") as f:
+            f.write(" ".join(all_text))
+        return all_text
 
-
-# Dynamically set VOCAB_SIZE from config
-try:
-    from config import small_model_config as model_cfg_dict
-except ImportError:
-    try:
-        from config import big_model_config as model_cfg_dict
-    except ImportError:
-        model_cfg_dict = {"vocab_size": 10000}
-
-VOCAB_SIZE = model_cfg_dict.get("vocab_size", 10000)
-tokenizer_path = f"gutenberg_tokenizer_vocab_size_{VOCAB_SIZE}.json"
 
 # Load tokenizer from file if available, otherwise train a new one
-if os.path.exists(tokenizer_path):
-    logger.info(f"Using previously trained tokenizer from {tokenizer_path}")
-    tokenizer = tokenizers.Tokenizer.from_file(tokenizer_path)
-else:
-    logger.info("No trained tokenizer found. Training new BPE tokenizer from scratch.")
-    tokenizer = tokenizers.Tokenizer(tokenizers.models.BPE())
-    tokenizer.pre_tokenizer = tokenizers.pre_tokenizers.ByteLevel(add_prefix_space=True)
-    tokenizer.decoder = tokenizers.decoders.ByteLevel()
-    trainer = tokenizers.trainers.BpeTrainer(
-        vocab_size=VOCAB_SIZE, special_tokens=SPECIAL_TOKENS, show_progress=True
-    )
+def get_tokenizer_and_text():
     text = get_dataset_text()
-    tokenizer.train_from_iterator(text, trainer=trainer)
-    tokenizer.enable_padding(pad_id=tokenizer.token_to_id("[pad]"), pad_token="[pad]")
-    tokenizer.save(tokenizer_path, pretty=True)  # Save with correct name
-    logger.info(f"Saved trained tokenizer to {tokenizer_path}")
-
-# Get the token ID for the [CLS] token
-CLS_TOKEN_ID = tokenizer.token_to_id("[CLS]")
+    if os.path.exists(tokenizer_path):
+        logger.info(f"Using previously trained tokenizer from {tokenizer_path}")
+        tokenizer = tokenizers.Tokenizer.from_file(tokenizer_path)
+    else:
+        logger.info(
+            "No trained tokenizer found. Training new BPE tokenizer from scratch."
+        )
+        tokenizer = tokenizers.Tokenizer(tokenizers.models.BPE())
+        tokenizer.pre_tokenizer = tokenizers.pre_tokenizers.ByteLevel(
+            add_prefix_space=True
+        )
+        tokenizer.decoder = tokenizers.decoders.ByteLevel()
+        trainer = tokenizers.trainers.BpeTrainer(
+            vocab_size=VOCAB_SIZE, special_tokens=SPECIAL_TOKENS, show_progress=True
+        )
+        tokenizer.train_from_iterator(text, trainer=trainer)
+        tokenizer.enable_padding(
+            pad_id=tokenizer.token_to_id("[pad]"), pad_token="[pad]"
+        )
+        tokenizer.save(tokenizer_path, pretty=True)  # Save with correct name
+        logger.info(f"Saved trained tokenizer to {tokenizer_path}")
+    return tokenizer, text
 
 
 # PyTorch dataset for Gutenberg text

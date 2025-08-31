@@ -62,6 +62,7 @@ class HRMInner(nn.Module):
         """
         Encode input tokens.
         """
+        # Convert input tokens to embeddings
         input_emb = self.input_embedding(inputs) * math.sqrt(self.config.hidden_size)
         return input_emb
 
@@ -69,10 +70,15 @@ class HRMInner(nn.Module):
         """
         ACT halting decision based on Q-values and step constraints.
         """
+        # Check if we are at the maximum step, if yes, then halt
+        # i.e. we don't have enough information to continue
         if step >= (halt_max_steps - 1):  # Use -1 to match 0-indexed steps
             return True
+        # Check if we are past the minimum step and halt > continue
         if (step >= halt_min_steps) and (q_halt > q_continue):
             return True
+        # Otherwise, it just means that we are still uncertain
+        # i.e. we should continue reasoning
         return False
 
     def initial_hidden_states(self, batch_size, seq_len, device):
@@ -138,10 +144,10 @@ class HRMInner(nn.Module):
         # Generate outputs: exclude first token (CLS)
         output_logits = self.output_head(z_H)[:, 1:]
 
-        # Q head: still use first token for Q-values
+        # Q head: use first token for Q-values
         q_logits = self.q_head(z_H[:, 0])
-        q_halt = torch.sigmoid(q_logits[:, 0])
-        q_continue = torch.sigmoid(q_logits[:, 1])
+        q_halt = q_logits[:, 0]
+        q_continue = q_logits[:, 1]
 
         return {
             "output": output_logits,

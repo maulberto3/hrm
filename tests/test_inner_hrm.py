@@ -49,7 +49,6 @@ def test_hrm_inner_basic():
 
     assert "output" in outputs, "Output should contain 'output' key"
     print(f"Output shape: {outputs['output'].shape}")
-    print(f"Output sample: {outputs['output'][0,0,:4].detach().cpu().numpy()}")
     print(f"High-level hidden shape: {outputs['hidden_states']['high_level'].shape}")
     print(f"Low-level hidden shape: {outputs['hidden_states']['low_level'].shape}")
 
