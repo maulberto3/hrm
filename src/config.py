@@ -20,7 +20,8 @@ class ModelConfig:
         halt_max_steps=16,
         halt_exploration_prob=0.1,
         halt_min_steps=1,
-        **kwargs,  # Accept and ignore extra keys
+        batch_size=2,
+        n_epochs=2,
     ):
         self.seq_len = seq_len
         self.vocab_size = vocab_size
@@ -35,6 +36,8 @@ class ModelConfig:
         self.halt_max_steps = halt_max_steps
         self.halt_exploration_prob = halt_exploration_prob
         self.halt_min_steps = halt_min_steps
+        self.batch_size = batch_size
+        self.n_epochs = n_epochs
 
 
 small_model_config = {
