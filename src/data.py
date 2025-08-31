@@ -4,6 +4,8 @@ import torch
 import tokenizers
 import logging
 
+# Suppress tokenizers parallelism warning
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 # Logger setup (module-level, best practice)
 logger = logging.getLogger(__name__)
