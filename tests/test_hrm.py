@@ -12,12 +12,12 @@ from config import ModelConfig
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def test_hrm_model_act_wrapper_train():
+def test_hrm_model_forward():
     """
-    Essential test for HierarchicalReasonerModel ACT wrapper in training mode.
+    Essential test for HierarchicalReasonerModel ACT forward pass.
     Checks output list length, output shapes, keys, and Q-learning targets.
     """
-    print("\n=== TEST: test_hrm_model_act_wrapper_train ===")
+    print("\n=== TEST: test_hrm_model_forward ===")
     config = ModelConfig(
         seq_len=16,
         vocab_size=100,
@@ -30,7 +30,7 @@ def test_hrm_model_act_wrapper_train():
         halt_max_steps=4,
         halt_exploration_prob=0.1,
     )
-    print("\nModel config:", config.__dict__)
+    print("Model config:", config.__dict__)
     batch_size = 2
     seq_len = config.seq_len
     model = HierarchicalReasonerModel(config).to(device)
@@ -48,7 +48,7 @@ def test_hrm_model_act_wrapper_train():
     ), "Model should return a list of outputs (one per ACT step)"
     assert len(outputs_list) > 0, "Outputs list should not be empty"
     for i, outputs in enumerate(outputs_list):
-        print(f"\n--- ACT Step {i} ---")
+        print(f"--- ACT Step {i} ---")
         print(f"Step index: {outputs.get('step', i)}")
         print(f"Halt Q: {outputs['q_halt'].detach().cpu().numpy()}")
         print(f"Continue Q: {outputs['q_continue'].detach().cpu().numpy()}")

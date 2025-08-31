@@ -33,7 +33,6 @@ def test_embedding_basic():
     output = embedding(input_ids)
     print(f"Input IDs shape: {input_ids.shape}")
     print(f"Output shape: {output.shape}")
-    print(f"Output sample: {output[0,0,:4].detach().cpu().numpy()}")
     assert output.shape == (
         batch_size,
         seq_len,
@@ -66,7 +65,6 @@ def test_linear_basic():
     output = linear(input_tensor)
     print(f"Input shape: {input_tensor.shape}")
     print(f"Output shape: {output.shape}")
-    print(f"Output sample: {output[0,0,:4].detach().cpu().numpy()}")
     assert output.shape == (
         batch_size,
         seq_len,
@@ -84,55 +82,41 @@ def test_rotary_embedding_basic():
     - Encodes positional information into the attention mechanism.
     """
     print("\n=== TEST: test_rotary_embedding_basic ===")
-
-    head_dim = 64  # head_dim in attention
-    max_length = 128
-    batch_size = 4
-    seq_len = 16
-
-    rotary_emb = RotaryEmbedding(head_dim, max_length).to(device)
-    # Input: [batch_size, seq_len, head_dim] - simplified interface
-    input_tensor = torch.randn(batch_size, seq_len, head_dim, device=device)
-    # Output: (cos, sin) - tuple of tensors
-    output = rotary_emb(input_tensor)
-    print(f"Input shape: {input_tensor.shape}")
-    print(f"Cos shape: {output[0].shape}, Sin shape: {output[1].shape}")
-    # print(f"Cos (sample): {output[0][:5, :5].detach().cpu().numpy()}")
-    # print(f"Sin (sample): {output[1][:5, :5].detach().cpu().numpy()}")
-
-    # Illustrate multi-head attention reshaping as in Reasoner test
-    model_dim = 64
+    # Illustrate multi-head attention reshaping for rotary embedding
+    model_dim = 64  # Full model dimension
     num_heads = 4
-    head_dim_reasoner = model_dim // num_heads
-    batch_size_reasoner = 2
-    seq_len_reasoner = 8
-    input_tensor_reasoner = torch.randn(
-        batch_size_reasoner, seq_len_reasoner, model_dim, device=device
-    )
-    input_tensor_flat = input_tensor_reasoner.view(
-        batch_size_reasoner * num_heads, seq_len_reasoner, head_dim_reasoner
-    )
-    print(f"\n[Multi-head Attention Example]")
-    print(f"Original input shape (model_dim): {input_tensor_reasoner.shape}")
-    print(
-        f"Reshaped for rotary (batch_size * num_heads, seq_len, head_dim): {input_tensor_flat.shape}"
-    )
-    print(
-        "This reshaping is required because rotary embedding operates per head, not over the full model dimension. Forgetting this is a common source of bugs!"
+    rotary_dim = model_dim // num_heads  # Dimension per head for rotary embedding
+    batch_size = 4
+    seq_len = 7
+
+    # Input tensor for the full model (before splitting into heads)
+    input_tensor_model = torch.randn(batch_size, seq_len, model_dim, device=device)
+
+    # Reshape to [batch_size * num_heads, seq_len, rotary_dim] for rotary embedding
+    input_tensor_rotary = input_tensor_model.view(
+        batch_size * num_heads, seq_len, rotary_dim
     )
 
+    rotary_emb = RotaryEmbedding(rotary_dim).to(device)
+    output = rotary_emb(input_tensor_rotary)
+    print(f"Original input shape (model_dim): {input_tensor_model.shape}")
+    print(f"Input shape (rotary): {input_tensor_rotary.shape}")
     print(
-        "NOTE: RotaryEmbedding operates over the head dimension, not the full model dimension. If you use multi-head attention, you must reshape your input so rotary is applied per head (head_dim), which is usually model_dim // num_heads. This is a common source of shape bugs!"
+        "NOTE: This reshaping is required because rotary embedding operates per head (rotary_dim), not over the full model dimension. If you use multi-head attention, you must reshape your input so rotary is applied per head. Forgetting this is a common source of bugs!"
+    )
+    print(f"Cos shape: {output[0].shape}, Sin shape: {output[1].shape}")
+    print(
+        f"Reshaped for rotary (batch_size * num_heads, seq_len, rotary_dim): {input_tensor_rotary.shape}"
     )
     assert isinstance(output, tuple), "RotaryEmbedding should return a tuple"
     assert len(output) == 2, "RotaryEmbedding should return a tuple of length 2"
     assert output[0].shape == (
         seq_len,
-        head_dim,
+        rotary_dim,
     ), f"Unexpected shape for cos: {output[0].shape}"
     assert output[1].shape == (
         seq_len,
-        head_dim,
+        rotary_dim,
     ), f"Unexpected shape for sin: {output[1].shape}"
     print("RotaryEmbedding test passed.")
 
@@ -163,9 +147,6 @@ def test_attention_basic():
     output_noncausal = attention_noncausal(input_tensor, cos_sin)
     print(f"Input shape: {input_tensor.shape}")
     print(f"Output shape (noncausal): {output_noncausal.shape}")
-    print(
-        f"Output sample (noncausal): {output_noncausal[0,0,:4].detach().cpu().numpy()}"
-    )
     assert output_noncausal.shape == (
         batch_size,
         seq_len,
@@ -179,7 +160,6 @@ def test_attention_basic():
     attention_causal = Attention(dim, head_dim, num_heads, causal=True).to(device)
     output_causal = attention_causal(input_tensor, cos_sin)
     print(f"Output shape (causal): {output_causal.shape}")
-    print(f"Output sample (causal): {output_causal[0,0,:4].detach().cpu().numpy()}")
     assert output_causal.shape == (
         batch_size,
         seq_len,
@@ -219,7 +199,6 @@ def test_swiglu_basic():
     output = swiglu(input_tensor)
     print(f"Input shape: {input_tensor.shape}")
     print(f"Output shape: {output.shape}")
-    print(f"Output sample: {output[0,0,:4].detach().cpu().numpy()}")
     assert output.shape == (
         batch_size,
         seq_len,
