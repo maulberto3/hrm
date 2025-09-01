@@ -9,17 +9,24 @@ import logging
 logger = logging.getLogger("hrm_utils")
 
 
-def compute_act_loss(outputs_list, targets, max_halt_steps):
+def compute_act_loss(outputs_list, targets, config):
     """
     Compute ACT loss combining sequence-to-sequence loss and Q-learning loss.
-    Uses max_halt_steps as the upper bound for ACT steps, matching raw_hrm.py behavior.
+
+    Args:
+        outputs_list: List of model outputs from each ACT step
+        targets: Target token sequences
+        config: Model configuration containing halt_max_steps and other parameters.
+                At the final step (>= config.halt_max_steps), forces Q-continue = Q-halt
+                to ensure the model learns to halt when it can't continue further.
     """
+    max_halt_steps = config["halt_max_steps"]
     total_loss = 0
     for m, outputs in enumerate(outputs_list):
         # Sequence-to-sequence loss
         seq_loss = nn.CrossEntropyLoss()(
             outputs["output"].reshape(-1, outputs["output"].shape[-1]),
-            targets.reshape(-1),
+            targets.contiguous().reshape(-1),
         )
 
         # G_halt logic: reward for correct prediction
