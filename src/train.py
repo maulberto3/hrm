@@ -44,13 +44,14 @@ def train_model(model, dataloader, optimizer, device, config, testing):
         logger.info("No existing checkpoint found. Starting fresh training.")
     try:
         for epoch in range(epochs):
+            print(epoch)
             logger.info(f"Epoch {epoch + 1}/{epochs}")
             epoch_loss = 0
             batch_count = 0
 
             for i, batch in enumerate(dataloader):
                 # Testing condition: only first 5 batches
-                if testing and i >= 5:
+                if testing and (i >= 5) and (epoch >= 0):
                     logger.info(f"Testing mode: stopping at batch {i}")
                     break
 
@@ -71,6 +72,15 @@ def train_model(model, dataloader, optimizer, device, config, testing):
 
             avg_loss = epoch_loss / batch_count if batch_count > 0 else 0
             logger.info(f"Epoch {epoch + 1} avg loss: {avg_loss:.4f}")
+
+            # Testing condition: only first 5 batches
+            if testing and (i >= 5) and (epoch >= 0):
+                logger.info(f"Testing mode: stopping at batch {i}")
+                break
+
+            # TODO Refactor that duplication
+            # TODO Also fix that generate_every
+            # TODO Also find a big config that works
 
             # Generate sample output every generate_every epochs
             if (epoch + 1) % generate_every == 0:

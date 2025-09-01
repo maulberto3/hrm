@@ -75,7 +75,7 @@ small_config = {
     "n_epochs": 1,
     "generate_every": 5,
     "lr": 1e-4,
-    "checkpoint_dir": "/home/maulb/hrm/data/",
+    "checkpoint_dir": "/home/maulb/hrm/model_checkpoints/",
 }
 
 big_config = {
@@ -104,5 +104,5 @@ big_config = {
     "n_epochs": 50,
     "generate_every": 15,
     "lr": 1e-4,
-    "checkpoint_dir": "/home/maulb/hrm/data/",
+    "checkpoint_dir": "/home/maulb/hrm/model_checkpoints/",
 }
