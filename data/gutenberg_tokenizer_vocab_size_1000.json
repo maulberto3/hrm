@@ -2,12 +2,14 @@
   "version": "1.0",
   "truncation": null,
   "padding": {
-    "strategy": "BatchLongest",
+    "strategy": {
+      "Fixed": 64
+    },
     "direction": "Right",
     "pad_to_multiple_of": null,
     "pad_id": 1,
     "pad_type_id": 0,
-    "pad_token": "[pad]"
+    "pad_token": "[PAD]"
   },
   "added_tokens": [
     {
@@ -21,7 +23,7 @@
     },
     {
       "id": 1,
-      "content": "[pad]",
+      "content": "[PAD]",
       "single_word": false,
       "lstrip": false,
       "rstrip": false,
@@ -30,7 +32,7 @@
     },
     {
       "id": 2,
-      "content": "[eos]",
+      "content": "[EOS]",
       "single_word": false,
       "lstrip": false,
       "rstrip": false,
@@ -63,8 +65,8 @@
     "ignore_merges": false,
     "vocab": {
       "[CLS]": 0,
-      "[pad]": 1,
-      "[eos]": 2,
+      "[PAD]": 1,
+      "[EOS]": 2,
       "!": 3,
       "\"": 4,
       "$": 5,
