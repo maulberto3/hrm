@@ -29,6 +29,14 @@ def test_hrm_model_forward():
         expansion=4,
         halt_max_steps=4,
         halt_exploration_prob=0.1,
+        norm_epsilon=0.15,
+        rope_theta=1000.0,
+        halt_min_steps=3,
+        max_new_tokens=64,
+        temperature=0.9,
+        do_sample=True,
+        top_p=0.85,
+        max_length=96,
     )
     print("Model config:", config.__dict__)
     batch_size = 2

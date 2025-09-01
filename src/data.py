@@ -12,15 +12,19 @@ logger = logging.getLogger(__name__)
 
 # Dynamically set VOCAB_SIZE from config
 try:
-    from config import small_model_config as model_cfg_dict
+    from config import small_config as config
 except ImportError:
-    from config import big_model_config as model_cfg_dict
+    from config import big_config as config
 
-VOCAB_SIZE = model_cfg_dict.get("vocab_size", 10000)
+VOCAB_SIZE = config["vocab_size"]
 tokenizer_path = f"data/gutenberg_tokenizer_vocab_size_{VOCAB_SIZE}.json"
 
 # Tokenization with Byte-Pair Encoding (BPE)
-SPECIAL_TOKENS = ["[CLS]", "[pad]", "[eos]"]
+SPECIAL_TOKENS = [
+    config["cls_token"],
+    config["pad_token"],
+    config["eos_token"],
+]
 
 # Data directory for storing downloaded texts
 DATA_DIR = "data"
@@ -58,13 +62,6 @@ def download_text():
 
 # Read and preprocess the text from a Gutenberg file
 def preprocess_gutenberg(filename):
-    """
-    Ensure the file is downloaded, then preprocess the text from a Gutenberg file.
-    - Downloads the file if not present.
-    - Extracts main content between Gutenberg markers.
-    - Removes empty lines and extra spaces.
-    """
-
     logger.info(f"Preprocessing {filename}")
     with open(filename, "r", encoding="utf-8") as f:
         text = f.read()
@@ -108,6 +105,7 @@ def get_dataset_text():
             file_path = os.path.join(DATA_DIR, f"{filename}.txt")
             text = preprocess_gutenberg(file_path)
             all_text.append(text)
+
         # Cache concatenated text for future runs
         with open(concat_path, "w", encoding="utf-8") as f:
             f.write(" ".join(all_text))
@@ -134,17 +132,20 @@ def get_tokenizer_and_text():
         )
         tokenizer.train_from_iterator(text, trainer=trainer)
         tokenizer.enable_padding(
-            pad_id=tokenizer.token_to_id("[pad]"), pad_token="[pad]"
+            pad_id=tokenizer.token_to_id("[PAD]"),
+            pad_token="[PAD]",
+            length=config["seq_len"],
         )
-        tokenizer.save(tokenizer_path, pretty=True)  # Save with correct name
+        tokenizer.save(tokenizer_path, pretty=True)
         logger.info(f"Saved trained tokenizer to {tokenizer_path}")
     return tokenizer, text
 
 
 # PyTorch dataset for Gutenberg text
 class GutenbergDataset(torch.utils.data.Dataset):
-    def __init__(self, text, tokenizer, seq_len=512, cls_token_id=None):
+    def __init__(self, text, tokenizer, seq_len):
         logger.info("Initializing GutenbergDataset")
+
         # Cache concatenated text for future runs
         concat_path = os.path.join(DATA_DIR, "concatenated_gutenberg.txt")
         if os.path.exists(concat_path):
@@ -155,12 +156,9 @@ class GutenbergDataset(torch.utils.data.Dataset):
             logger.info(f"Caching concatenated text to {concat_path}")
             with open(concat_path, "w", encoding="utf-8") as f:
                 f.write(text)
+
         self.seq_len = seq_len
-        # Use provided CLS token ID or get it from tokenizer
-        self.cls_token_id = (
-            cls_token_id if cls_token_id is not None else tokenizer.token_to_id("[CLS]")
-        )
-        # Encode the entire text into token IDs
+        self.cls_token_id = tokenizer.token_to_id("[CLS]")
         self.encoded = tokenizer.encode(text).ids
 
     def __len__(self):
