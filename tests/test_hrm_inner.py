@@ -30,6 +30,12 @@ def test_hrm_inner_basic():
         rope_theta=10000.0,
         halt_max_steps=4,
         halt_exploration_prob=0.1,
+        halt_min_steps=2,
+        max_new_tokens=72,
+        temperature=0.6,
+        do_sample=True,
+        top_p=0.8,
+        max_length=32,
     )
     print("\nModel config:", config.__dict__)
     batch_size = 2

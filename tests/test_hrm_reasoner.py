@@ -37,6 +37,12 @@ def test_reasoning_block_basic():
         rope_theta=10000.0,
         halt_max_steps=16,
         halt_exploration_prob=0.1,
+        halt_min_steps=3,
+        max_new_tokens=144,
+        temperature=0.75,
+        do_sample=True,
+        top_p=0.65,
+        max_length=256,
     )
     print("\nModel config:", config.__dict__)
 
@@ -79,18 +85,24 @@ def test_reasoner_module_basic():
     print("\n=== TEST: test_reasoner_module_basic ===")
 
     config = ModelConfig(
-        seq_len=32,
+        seq_len=128,
         vocab_size=100,
         high_level_cycles=2,
         low_level_cycles=2,
         num_layers=2,
-        hidden_size=96,
+        hidden_size=64,
         num_heads=4,
         expansion=4,
         norm_epsilon=0.1,
         rope_theta=10000.0,
         halt_max_steps=16,
         halt_exploration_prob=0.1,
+        halt_min_steps=3,
+        max_new_tokens=144,
+        temperature=0.75,
+        do_sample=True,
+        top_p=0.65,
+        max_length=256,
     )
     print("\nModel config:", config.__dict__)
 

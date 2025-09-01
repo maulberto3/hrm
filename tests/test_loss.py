@@ -24,7 +24,16 @@ def test_compute_act_loss_basic():
         print(
             f"Step {i}: logits shape {logits.shape}, q_halt shape {q_halt.shape}, q_continue shape {q_continue.shape}"
         )
-    loss = compute_act_loss(outputs_list, targets, max_halt_steps=act_steps)
+
+    # Minimal config for ACT loss
+    config = {
+        "seq_len": 3,
+        "vocab_size": 5,
+        "halt_max_steps": 4,
+        "cls_token": "[cls]",
+    }
+
+    loss = compute_act_loss(outputs_list, targets, config)
     print(f"Computed ACT loss: {loss.item()}")
     assert loss.item() > 0
     loss.backward()
