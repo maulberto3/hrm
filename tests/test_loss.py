@@ -1,5 +1,5 @@
 import torch
-from src.loss import compute_act_loss
+from loss import compute_act_loss
 
 
 def test_compute_act_loss_basic():

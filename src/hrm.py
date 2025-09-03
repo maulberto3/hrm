@@ -9,6 +9,9 @@ import torch
 from torch import nn
 from config import ModelConfig
 from hrm_inner import HRMInner
+import logging
+
+logger = logging.getLogger("__name__")
 
 
 class HierarchicalReasonerModel(nn.Module):
@@ -21,7 +24,10 @@ class HierarchicalReasonerModel(nn.Module):
         super().__init__()
         self.config = config
         self.inner = HRMInner(config)
-        self.training = True  # Track training/eval mode
+        self.training = True
+        logger.info(
+            f"Total model parameters: {sum(p.numel() for p in self.parameters()):,}"
+        )
 
     def train(self, mode: bool = True):
         super().train(mode)
@@ -175,18 +181,3 @@ Key equations and mechanisms:
 - Deep supervision: detach hidden state between segments
 - One-step gradient: only backprop through final states
 """
-
-# In machine learning terms, **segment** refers to a single "reasoning pass" or "iteration" of the model's hierarchical reasoning cycle.
-# - In the HRM with ACT, the model can perform multiple segments per input, each segment representing a deeper or more deliberate reasoning step.
-# - Each segment produces its own prediction and Q-values (halt/continue).
-# - The ACT mechanism adaptively decides how many segments to run for each input, allowing the model to "think longer" for harder tasks and "halt early" for easier ones.
-# - This is analogous to adaptive computation time, where the model dynamically chooses its "runtime" per input, similar to how humans may think quickly or slowly depending on task complexity.
-
-# Yes, in HRM with ACT, the number of reasoning segments (loops) per input is **variable** and adaptively determined at runtime.
-# - For each input, the model may perform a different number of reasoning cycles (segments), depending on the Q-head's halt/continue predictions and the ACT logic.
-# - This means the computation time (number of passes through the reasoning loop) is **not fixed**—it can be longer for harder inputs and shorter for easier ones.
-# - The adaptive halting mechanism allows the model to "think longer" when needed, just like humans do for complex tasks.
-# Yes, in HRM with ACT, the number of reasoning segments (loops) per input is **variable** and adaptively determined at runtime.
-# - For each input, the model may perform a different number of reasoning cycles (segments), depending on the Q-head's halt/continue predictions and the ACT logic.
-# - This means the computation time (number of passes through the reasoning loop) is **not fixed**—it can be longer for harder inputs and shorter for easier ones.
-# - The adaptive halting mechanism allows the model to "think longer" when needed, just like humans do for complex tasks.
