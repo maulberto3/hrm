@@ -58,11 +58,11 @@ small_config = {
     "hidden_size": 64,
     "num_heads": 4,
     "expansion": 2.0,
+    "halt_max_steps": 4,
+    "halt_exploration_prob": 0.1,
+    "halt_min_steps": 1,
     "norm_epsilon": 1e-5,
     "rope_theta": 10000.0,
-    "halt_max_steps": 4,
-    "halt_exploration_prob": 0.05,
-    "halt_min_steps": 1,
     "max_new_tokens": 100,
     "temperature": 0.8,
     "do_sample": True,
@@ -76,6 +76,7 @@ small_config = {
     "generate_every": 5,
     "lr": 1e-4,
     "checkpoint_dir": "/home/maulb/hrm/model_checkpoints/",
+    "trunc_seq_prob": 0.05,
 }
 
 big_config = {
@@ -87,11 +88,11 @@ big_config = {
     "hidden_size": 504,
     "num_heads": 12,
     "expansion": 4.0,
-    "norm_epsilon": 1e-5,
-    "rope_theta": 10000.0,
     "halt_max_steps": 32,
     "halt_exploration_prob": 0.1,
     "halt_min_steps": 1,
+    "rope_theta": 10000.0,
+    "norm_epsilon": 1e-5,
     "max_new_tokens": 256,
     "temperature": 0.8,
     "do_sample": True,
@@ -105,4 +106,5 @@ big_config = {
     "generate_every": 15,
     "lr": 1e-4,
     "checkpoint_dir": "/home/maulb/hrm/model_checkpoints/",
+    "trunc_seq_prob": 0.05,
 }

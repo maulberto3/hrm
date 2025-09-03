@@ -3,7 +3,7 @@ import os
 from loss import compute_act_loss
 import logging
 from utils import create_model_name
-from generate import generate_text_basic, get_random_text_beginning
+from generate import generate_text_basic, get_random_text_small
 
 
 logger = logging.getLogger("__name__")
@@ -51,7 +51,7 @@ def train_model(model, dataloader, optimizer, device, config, testing):
 
             for i, batch in enumerate(dataloader):
                 # Testing condition: only first 5 batches
-                if testing and (i >= 5) and (epoch >= 0):
+                if testing and (i >= 5):
                     logger.info(f"Testing mode: stopping at batch {i}")
                     break
 
@@ -68,17 +68,16 @@ def train_model(model, dataloader, optimizer, device, config, testing):
                 epoch_loss += loss.item()
                 batch_count += 1
                 # Print to console immediately, separate from logger
-                print(f"{loss.item():.4f}", end=" ", flush=True)
+                print(f"{loss.item():.2f}", end=" ", flush=True)
 
             avg_loss = epoch_loss / batch_count if batch_count > 0 else 0
             logger.info(f"Epoch {epoch + 1} avg loss: {avg_loss:.4f}")
 
             # Testing condition: only first 5 batches
-            if testing and (i >= 5) and (epoch >= 0):
-                logger.info(f"Testing mode: stopping at batch {i}")
+            if testing:
+                logger.info(f"Testing mode: stopping at epoch {epoch}")
                 break
 
-            # TODO Refactor that duplication
             # TODO Also fix that generate_every
             # TODO Also find a big config that works
 
@@ -87,7 +86,7 @@ def train_model(model, dataloader, optimizer, device, config, testing):
                 logger.info("--- Sample Generation ---")
                 try:
                     # Use Alice prompt for generation
-                    prompt, _ = get_random_text_beginning()
+                    prompt, _ = get_random_text_small()
                     # Assume tokenizer is available in config
                     tokenizer = config["tokenizer"]
                     gen_text = generate_text_basic(model, tokenizer, prompt, config)

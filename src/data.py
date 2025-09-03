@@ -3,6 +3,8 @@ import requests
 import torch
 import tokenizers
 import logging
+import random
+
 
 # Suppress tokenizers parallelism warning
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -143,7 +145,7 @@ def get_tokenizer_and_text():
 
 # PyTorch dataset for Gutenberg text
 class GutenbergDataset(torch.utils.data.Dataset):
-    def __init__(self, text, tokenizer, seq_len):
+    def __init__(self, text, tokenizer, config):
         logger.info("Initializing GutenbergDataset")
 
         # Cache concatenated text for future runs
@@ -157,9 +159,15 @@ class GutenbergDataset(torch.utils.data.Dataset):
             with open(concat_path, "w", encoding="utf-8") as f:
                 f.write(text)
 
-        self.seq_len = seq_len
-        self.cls_token_id = tokenizer.token_to_id("[CLS]")
+        self.config = config
+        self.seq_len = self.config["seq_len"]
+        self.cls_token_id = tokenizer.token_to_id(self.config["cls_token"])
+        self.pad_token_id = tokenizer.token_to_id(self.config["pad_token"])
         self.encoded = tokenizer.encode(text).ids
+        logger.info(f"GutenbergDataset: Total tokens in dataset: {len(self.encoded):,}")
+        logger.info(
+            f"GutenbergDataset: Number of sentences: {len(self.encoded) - self.seq_len:,}"
+        )
 
     def __len__(self):
         # Number of possible sequences in the encoded text
@@ -168,4 +176,9 @@ class GutenbergDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         # Prepend CLS token to each sequence for model input
         seq = [self.cls_token_id] + self.encoded[idx : idx + self.seq_len - 1]
+
+        # With 5% probability, randomly truncate and pad from a random index (after CLS)
+        if random.random() < self.config["trunc_seq_prob"]:
+            trunc_idx = random.randint(2, len(seq) - 1)
+            seq[trunc_idx:] = [self.pad_token_id] * (len(seq) - trunc_idx)
         return torch.tensor(seq)

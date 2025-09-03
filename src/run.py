@@ -22,7 +22,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 # === Config selection ===
-SMALL = False
+SMALL = True
 if SMALL:
     logger.info("Using small_config.")
     from config import small_config as config
@@ -45,7 +45,6 @@ logger.info(f"Model config: {config}")
 logger.info("--- Preparing dataset ---")
 tokenizer, text = get_tokenizer_and_text()
 dataset = GutenbergDataset(text, tokenizer, seq_len=SEQ_LEN + 1)
-logger.info(f"Dataset ready. Number of sentences: {len(dataset):,}")
 
 
 # === Create DataLoader ===
@@ -62,7 +61,7 @@ logger.info(f"Dataloader ready. Number of batches per epoch: {len(dataloader):,}
 # === Model config and initialization ===
 model_config = ModelConfig(**config)
 model = HierarchicalReasonerModel(model_config).to(DEVICE)
-optimizer = torch.optim.Adam(model.parameters(), lr=config["lr"])
+optimizer = torch.optim.AdamW(model.parameters(), lr=config["lr"])
 logger.info(f"Model initialized: {model.__class__.__name__}")
 logger.info(f"Optimizer: Adam, lr={config['lr']}")
 
